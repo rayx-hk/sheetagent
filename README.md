@@ -1,44 +1,56 @@
 # dataagent
 
-Spreadsheet Agent 核心代码 — 基于 ByteDance Eino 的多 Agent 系统，冲榜 SpreadsheetBench。
+Spreadsheet Agent core code — Multi-agent system based on ByteDance Eino, targeting SpreadsheetBench.
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 环境检查
+# Environment check
 make precheck
 
-# 编译
+# Build
 make build
 
-# 下载数据集
+# Download dataset
 make download-dataset
 
-# 跑 200 条样本测试
-make bench-200
+# Run 400 sample tests
+make bench-400
 ```
 
-## 目录结构
+## Directory Structure
 
 ```
 cmd/
-  agent/       # Agent 服务入口
-  bench/       # 基准测试 CLI
-  precheck/    # 环境预检
+  agent/       # Agent service entry
+  bench/       # Benchmark CLI
+  precheck/    # Environment precheck
 internal/
-  agent/       # 四个核心 Agent (Coordinator/Informer/Coder/Evaluator)
-  model/       # LLM 模型层 (Claude/Gemini/OpenRouter)
-  sheet/       # Excel 解析 + SheetCompressor
-  executor/    # Python 代码执行器 (embedded/docker)
-  eval/        # OJ 评测引擎
-  bench/       # 基准测试框架
-  skills/      # v1.x.x 技能系统 (reserved)
-config/        # 配置文件
-docker/        # 执行沙箱 Dockerfile
-scripts/       # 数据集下载等脚本
+  agent/       # Four core agents (Coordinator/Informer/Coder/Evaluator)
+  model/       # LLM model layer (Claude/Gemini/OpenRouter)
+  sheet/       # Excel parsing + SheetCompressor
+  executor/    # Python code executor (embedded/docker)
+  eval/        # OJ evaluation engine
+  bench/       # Benchmark framework
+  skills/      # v1.x.x skills system (reserved)
+config/        # Config files
+docker/        # Execution sandbox Dockerfile
+scripts/       # Dataset download and other scripts
 ```
 
-## 关联仓库
+## Related Repositories
 
-- [dataagent-design](../dataagent-design/) — 设计文档、UI/UX、数据集
-- [dataagent-tools](../dataagent-tools/) — 数据集收集/清洗/Research Radar 等工具
+- [dataagent-design](../dataagent-design/) — Design docs, UI/UX, datasets
+- [dataagent-tools](../dataagent-tools/) — Dataset collection/cleaning/Research Radar tools
+
+
+## 🏆 Benchmark Scores
+
+We continuously evaluate DataAgent against the **SpreadsheetBench** dataset.
+
+| Version | Dataset | Pass@1 Score | Status |
+| :---: | :---: | :---: | :---: |
+| **v0.2.0** | `400 Verified` | **73.7 / 100** | ![73.7%](https://img.shields.io/badge/Pass@1-73.7%25-brightgreen?style=for-the-badge&logo=microsoftexcel&logoColor=white) |
+| **v0.1.0** | `400 Verified` | **65.8 / 100** | ![65.8%](https://img.shields.io/badge/Pass@1-65.8%25-yellow?style=for-the-badge&logo=microsoftexcel&logoColor=white) |
+
+> *Evaluated using Claude Sonnet 4.6 in the CodeAct Single-Agent architecture.*

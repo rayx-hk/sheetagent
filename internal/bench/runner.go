@@ -16,15 +16,17 @@ import (
 	"github.com/cloudwego/eino/adk"
 
 	"github.com/rayx-hk/dataagent/internal/eval"
+	"github.com/rayx-hk/dataagent/internal/executor"
 	"github.com/rayx-hk/dataagent/internal/orchestrator"
 )
 
 type RunConfig struct {
-	Concurrency int
-	MaxRetry    int
-	OutputDir   string
-	ReportDir   string
-	Resume      bool
+	Concurrency  int
+	MaxRetry     int
+	OutputDir    string
+	ReportDir    string
+	Resume       bool
+	REPLExecutor *executor.REPLExecutor
 }
 
 type Runner struct {
@@ -37,7 +39,8 @@ type Runner struct {
 
 func NewRunner(cfg RunConfig, codeAct adk.Agent, judge *eval.OJJudge, builder *orchestrator.PromptBuilder) *Runner {
 	orch := orchestrator.NewOrchestrator(orchestrator.OrchestratorConfig{
-		MaxRetry: cfg.MaxRetry,
+		MaxRetry:     cfg.MaxRetry,
+		REPLExecutor: cfg.REPLExecutor,
 	}, codeAct, judge, builder)
 
 	return &Runner{
@@ -57,6 +60,7 @@ type TaskResult struct {
 	AttemptCount int
 	Instruction  string
 	Duration     float64
+	Confidence   float64 // Agent confidence 0-1, -1 if not parsed
 }
 
 func (r *Runner) Run(ctx context.Context, tasks []Task) (*eval.BenchReport, error) {
@@ -117,6 +121,7 @@ func (r *Runner) Run(ctx context.Context, tasks []Task) (*eval.BenchReport, erro
 			AttemptCount:    result.AttemptCount,
 			Reason:          result.Error,
 			Instruction:     result.Instruction,
+			Confidence:      result.Confidence,
 		}
 		report.AddDetailedResult(detail, result.Pass)
 	}
@@ -143,6 +148,7 @@ type taskResultRecord struct {
 	DurationSeconds float64        `json:"duration_seconds"`
 	Category        string         `json:"category,omitempty"`
 	FinalError      string         `json:"final_error,omitempty"`
+	Confidence      float64        `json:"confidence,omitempty"`
 	Traces          []attemptTrace `json:"traces,omitempty"`
 	FinishedAt      time.Time      `json:"finished_at"`
 }
@@ -205,6 +211,7 @@ func (r *Runner) runSingleCase(ctx context.Context, task Task, tc TestCase) Task
 	result.Pass = orchRes.Success
 	result.Error = orchRes.Error
 	result.AttemptCount = orchRes.Attempt
+	result.Confidence = orchRes.Confidence
 
 	r.writeTaskResult(workDir, result)
 	if len(orchRes.AgentTrace) > 0 {
@@ -232,6 +239,7 @@ func (r *Runner) writeTaskResult(workDir string, result TaskResult) {
 		DurationSeconds: result.Duration,
 		Category:        string(cat),
 		FinalError:      result.Error,
+		Confidence:      result.Confidence,
 		FinishedAt:      time.Now(),
 	}
 	data, err := json.MarshalIndent(rec, "", "  ")
@@ -259,6 +267,7 @@ func (r *Runner) appendFailureLog(task Task, tc TestCase, result TaskResult, fin
 		DurationSeconds: result.Duration,
 		Category:        string(cat),
 		FinalError:      finalErr,
+		Confidence:      result.Confidence,
 		FinishedAt:      time.Now(),
 	}
 	line, err := json.Marshal(rec)

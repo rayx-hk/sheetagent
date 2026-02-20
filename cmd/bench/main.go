@@ -80,7 +80,7 @@ func run(datasetName string, concurrency, maxRetry, limit int, outputDir, report
 	}
 	slog.Info("model router created")
 
-	rateInterval := 2 * time.Second
+	rateInterval := 3 * time.Second
 	wrapRL := func(role model.Role) (eimodel.ToolCallingChatModel, error) {
 		m, err := router.Get(role)
 		if err != nil {
@@ -96,6 +96,8 @@ func run(datasetName string, concurrency, maxRetry, limit int, outputDir, report
 
 	exec := executor.NewEmbedded(cfg.Executor.PythonPath, cfg.Executor.Timeout)
 	defer exec.Close()
+
+	replExec := executor.NewREPLExecutor(cfg.Executor.PythonPath, cfg.Executor.Timeout)
 
 	runnerTool, err := agent.NewPythonRunnerTool(exec)
 	if err != nil {
@@ -117,11 +119,12 @@ func run(datasetName string, concurrency, maxRetry, limit int, outputDir, report
 	// Replace bench.Runner with our orchestrator run inside a loop 
 	// (or update internal/bench/runner.go to use the orchestrator)
 	runner := bench.NewRunner(bench.RunConfig{
-		Concurrency: concurrency,
-		MaxRetry:    maxRetry,
-		OutputDir:   outputDir,
-		ReportDir:   reportDir,
-		Resume:      resume,
+		Concurrency:  concurrency,
+		MaxRetry:     maxRetry,
+		OutputDir:    outputDir,
+		ReportDir:    reportDir,
+		Resume:       resume,
+		REPLExecutor: replExec,
 	}, codeActAgent, judge, builder)
 
 	report, err := runner.Run(ctx, tasks)

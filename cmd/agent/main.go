@@ -61,6 +61,8 @@ func run(instruction, inputFile, answerPosition, configPath, modelsPath string) 
 	exec := executor.NewEmbedded(cfg.Executor.PythonPath, cfg.Executor.Timeout)
 	defer exec.Close()
 
+	replExec := executor.NewREPLExecutor(cfg.Executor.PythonPath, cfg.Executor.Timeout)
+
 	runnerTool, err := agent.NewPythonRunnerTool(exec)
 	if err != nil {
 		return err
@@ -79,7 +81,8 @@ func run(instruction, inputFile, answerPosition, configPath, modelsPath string) 
 	builder := orchestrator.NewPromptBuilder()
 
 	orch := orchestrator.NewOrchestrator(orchestrator.OrchestratorConfig{
-		MaxRetry: 3,
+		MaxRetry:     3,
+		REPLExecutor: replExec,
 	}, codeActAgent, judge, builder)
 
 	absInput, err := filepath.Abs(inputFile)

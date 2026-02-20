@@ -57,7 +57,7 @@ func NewRateLimitedModel(inner eimodel.ToolCallingChatModel, minInterval time.Du
 func doWithRetry[T any](ctx context.Context, op func() (T, error)) (T, error) {
 	var lastErr error
 	backoff := 2 * time.Second
-	maxRetries := 4
+	maxRetries := 6
 
 	for i := 0; i < maxRetries; i++ {
 		res, err := op()
@@ -76,10 +76,14 @@ func doWithRetry[T any](ctx context.Context, op func() (T, error)) (T, error) {
 			break
 		}
 
-		slog.Warn("API call failed, retrying", "attempt", i+1, "backoff", backoff, "error", err)
+		// Add jitter to avoid thundering herd
+		jitter := time.Duration(time.Now().UnixNano()%1000) * time.Millisecond
+		actualBackoff := backoff + jitter
+
+		slog.Warn("API call failed, retrying", "attempt", i+1, "backoff", actualBackoff, "error", err)
 
 		select {
-		case <-time.After(backoff):
+		case <-time.After(actualBackoff):
 			backoff *= 2
 		case <-ctx.Done():
 			var zero T

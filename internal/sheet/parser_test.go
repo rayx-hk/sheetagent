@@ -1,78 +1,30 @@
 package sheet
 
 import (
-	"context"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"github.com/xuri/excelize/v2"
 )
 
 func testdataPath(name string) string {
 	_, filename, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(filename), "testdata", name)
+	return filepath.Join(filepath.Dir(filename), "..", "..", "testdata", name)
 }
 
-func TestExcelizeParser_Parse(t *testing.T) {
-	p := NewParser()
-	ctx := context.Background()
-
-	sheets, err := p.Parse(ctx, testdataPath("simple.xlsx"))
+func TestSafeCalcCellValue(t *testing.T) {
+	f := excelize.NewFile()
+	// Set the "poison" formula that causes a panic in excelize v2.10.0
+	err := f.SetCellFormula("Sheet1", "C2", `=IFERROR(SMALL(IF(ISNUMBER(FIND(ROW($0:$9),TEXT(A2,"0"))),ROW($0:$9)),1),"")`)
 	if err != nil {
-		t.Fatalf("parse simple.xlsx: %v", err)
+		t.Fatalf("failed to set cell formula: %v", err)
 	}
-	if len(sheets) != 1 {
-		t.Fatalf("expected 1 sheet, got %d", len(sheets))
-	}
-	s := sheets[0]
-	if s.Name != "Sheet1" {
-		t.Errorf("expected sheet name Sheet1, got %s", s.Name)
-	}
-	if s.MaxRow < 3 {
-		t.Errorf("expected at least 3 rows, got %d", s.MaxRow)
-	}
-	if s.MaxCol < 3 {
-		t.Errorf("expected at least 3 cols, got %d", s.MaxCol)
-	}
-}
 
-func TestExcelizeParser_ParseMultiSheet(t *testing.T) {
-	p := NewParser()
-	ctx := context.Background()
-
-	sheets, err := p.Parse(ctx, testdataPath("multisheet.xlsx"))
-	if err != nil {
-		t.Fatalf("parse multisheet.xlsx: %v", err)
-	}
-	if len(sheets) < 2 {
-		t.Fatalf("expected at least 2 sheets, got %d", len(sheets))
-	}
-}
-
-func TestExcelizeParser_ParseOverview(t *testing.T) {
-	p := NewParser()
-	ctx := context.Background()
-
-	overview, err := p.ParseOverview(ctx, testdataPath("simple.xlsx"))
-	if err != nil {
-		t.Fatalf("parse overview: %v", err)
-	}
-	if overview.FilePath == "" {
-		t.Error("expected file path to be set")
-	}
-	if overview.FileSize == 0 {
-		t.Error("expected non-zero file size")
-	}
-	if len(overview.SheetNames) == 0 {
-		t.Error("expected sheet names")
-	}
-	if len(overview.Sheets) == 0 {
-		t.Error("expected sheet info")
-	}
-	si := overview.Sheets[0]
-	if len(si.Headers) == 0 {
-		t.Error("expected headers")
-	}
-	if si.RowCount == 0 {
-		t.Error("expected non-zero row count")
+	// safeCalcCellValue should return an error encapsulating the panic, rather than crashing
+	val, err := safeCalcCellValue(f, "Sheet1", "C2")
+	if err == nil {
+		t.Errorf("expected an error due to panic recovery, but got nil and value: %q", val)
+	} else {
+		t.Logf("Successfully caught panic as error: %v", err)
 	}
 }

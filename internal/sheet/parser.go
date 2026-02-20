@@ -75,8 +75,9 @@ func (p *ExcelizeParser) parseSheet(f *excelize.File, name string) (SheetData, e
 			if formula != "" && val == "" {
 				// If val is empty but there's a formula, it might be an error like #DIV/0!
 				// excelize GetRows/GetCellValue suppress error values, but CalcCellValue can retrieve them
-				if calcVal, err := f.CalcCellValue(name, cellRef); err != nil {
-					// We use the error string itself as the value (e.g., #DIV/0!)
+				calcVal, err := safeCalcCellValue(f, name, cellRef)
+				if err != nil {
+					// We use the error string itself as the value (e.g., #DIV/0! or panic info)
 					val = err.Error()
 				} else if calcVal != "" {
 					val = calcVal
@@ -237,4 +238,13 @@ func dominantType(types map[string]int) string {
 		}
 	}
 	return result
+}
+
+func safeCalcCellValue(f *excelize.File, name, cellRef string) (val string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("calc panic: %v", r)
+		}
+	}()
+	return f.CalcCellValue(name, cellRef)
 }

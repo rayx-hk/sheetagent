@@ -74,6 +74,7 @@ type FailureDetail struct {
 	AttemptCount    int             `json:"attempt_count"`
 	Reason          string          `json:"reason"`
 	Instruction     string          `json:"instruction,omitempty"`
+	Confidence      float64         `json:"confidence,omitempty"` // Agent confidence 0-1, -1 if not parsed
 }
 
 func (r *BenchReport) CalcPassRate() {
@@ -186,8 +187,8 @@ func (r *BenchReport) WriteMarkdown(path string) error {
 			limit = 50
 		}
 		fmt.Fprintf(&b, "## Failures (showing %d/%d)\n\n", limit, len(r.Failures))
-		fmt.Fprintf(&b, "| Task | Type | Category | Attempts | Reason |\n")
-		fmt.Fprintf(&b, "|------|------|----------|----------|--------|\n")
+		fmt.Fprintf(&b, "| Task | Type | Category | Attempts | Confidence | Reason |\n")
+		fmt.Fprintf(&b, "|------|------|----------|----------|------------|--------|\n")
 		for i := 0; i < limit; i++ {
 			f := r.Failures[i]
 			reason := f.Reason
@@ -195,8 +196,12 @@ func (r *BenchReport) WriteMarkdown(path string) error {
 				reason = reason[:120] + "..."
 			}
 			reason = strings.ReplaceAll(reason, "|", "\\|")
-			fmt.Fprintf(&b, "| %s | %s | %s | %d | %s |\n",
-				f.TaskID, f.InstructionType, f.Category, f.AttemptCount, reason)
+			confStr := "-"
+			if f.Confidence >= 0 {
+				confStr = fmt.Sprintf("%.2f", f.Confidence)
+			}
+			fmt.Fprintf(&b, "| %s | %s | %s | %d | %s | %s |\n",
+				f.TaskID, f.InstructionType, f.Category, f.AttemptCount, confStr, reason)
 		}
 	}
 

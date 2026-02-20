@@ -71,8 +71,9 @@ Compressed Sheet Overview:
 		Agent: ag,
 	})
 
+	runCtx := context.WithValue(ctx, answerPositionKey, input.AnswerPosition)
 	initialMsg := schema.UserMessage(instruction)
-	iter := runner.Run(ctx, []*schema.Message{initialMsg})
+	iter := runner.Run(runCtx, []*schema.Message{initialMsg})
 
 	var lastMsg *schema.Message
 	var toolOutputs []string
