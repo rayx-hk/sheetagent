@@ -72,6 +72,17 @@ func (p *ExcelizeParser) parseSheet(f *excelize.File, name string) (SheetData, e
 			cellRef, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+1)
 			formula, _ := f.GetCellFormula(name, cellRef)
 
+			if formula != "" && val == "" {
+				// If val is empty but there's a formula, it might be an error like #DIV/0!
+				// excelize GetRows/GetCellValue suppress error values, but CalcCellValue can retrieve them
+				if calcVal, err := f.CalcCellValue(name, cellRef); err != nil {
+					// We use the error string itself as the value (e.g., #DIV/0!)
+					val = err.Error()
+				} else if calcVal != "" {
+					val = calcVal
+				}
+			}
+
 			cv := CellValue{
 				Row:   rowIdx + 1,
 				Col:   colIdx + 1,
