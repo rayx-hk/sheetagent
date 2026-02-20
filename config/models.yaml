@@ -1,0 +1,42 @@
+model_routing:
+  planner:
+    primary:
+      type: claude
+      model: claude-opus-4-6-20260210
+      max_tokens: 16384
+    fallback:
+      type: claude
+      model: claude-sonnet-4-20260210
+      max_tokens: 2048
+  coder:
+    primary:
+      type: claude
+      model: claude-opus-4-6-20260210
+      max_tokens: 16384
+    fallback:
+      type: claude
+      model: claude-sonnet-4-20260210
+      max_tokens: 2048
+  informer:
+    primary:
+      type: claude
+      model: claude-opus-4-6-20260210
+      max_tokens: 16384
+    fallback:
+      type: claude
+      model: claude-sonnet-4-20260210
+      max_tokens: 2048
+  evaluator:
+    primary:
+      type: claude
+      model: claude-opus-4-6-20260210
+      max_tokens: 16384
+    fallback:
+      type: claude
+      model: claude-sonnet-4-20260210
+      max_tokens: 2048
+
+openrouter:
+  base_url: https://openrouter.ai/api/v1
+  fallback_strategy: ordered
+  max_retries: 2

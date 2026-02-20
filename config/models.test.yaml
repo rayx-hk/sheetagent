@@ -1,0 +1,21 @@
+model_routing:
+  planner:
+    primary:
+      type: claude
+      model: claude-sonnet-4-6-20250514
+      max_tokens: 12000
+  coder:
+    primary:
+      type: claude
+      model: claude-sonnet-4-6-20250514
+      max_tokens: 12000
+  informer:
+    primary:
+      type: claude
+      model: claude-sonnet-4-6-20250514
+      max_tokens: 12000
+  evaluator:
+    primary:
+      type: claude
+      model: claude-sonnet-4-6-20250514
+      max_tokens: 12000

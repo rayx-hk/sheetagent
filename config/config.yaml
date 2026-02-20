@@ -1,0 +1,19 @@
+server:
+  port: 8090
+
+executor:
+  type: embedded
+  python_path: python3
+  timeout: 120s
+  work_dir: ./output/workdir
+
+docker:
+  executor_image: spreadsheet-agent-executor:latest
+  eval_image: spreadsheet-agent-eval:latest
+
+bench:
+  concurrency: 2
+  max_retry: 2
+  dataset_dir: /Users/razil/Desktop/razil/dev/opensource/dataagent-design/datasets
+  output_dir: ./output
+  report_dir: ./reports

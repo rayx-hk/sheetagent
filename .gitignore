@@ -1,0 +1,11 @@
+bin/
+output/
+reports/
+data/sample_data_200/
+data/all_data_912/
+data/spreadsheetbench_verified_400/
+.env
+.env.local
+.DS_Store
+vendor/
+docker/tmp/
