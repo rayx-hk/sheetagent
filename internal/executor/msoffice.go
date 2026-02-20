@@ -2,14 +2,62 @@ package executor
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 )
+
+// copyFile is a helper to copy a file from src to dst.
+func copyFile(src, dst string) error {
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	d, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	_, err = io.Copy(d, s)
+	return err
+}
 
 // ForceCalculate uses AppleScript to silently open the Excel file,
 // force a full recalculation of all formulas, save the file, and close it.
-// This is necessary because openpyxl does not evaluate Excel formulas,
-// leaving them empty when read by our Go evaluator.
-func ForceCalculate(filepath string) error {
+//
+// To bypass macOS Sandbox/TCC permission prompts (which pop up when Excel tries
+// to open files in protected directories like Desktop/Documents), it temporarily
+// copies the file to the globally accessible temp directory, runs the calculation
+// there, and copies it back.
+func ForceCalculate(targetPath string) error {
+	// Create a temporary file in the explicitly accessible temp directory
+	tempFile, err := os.CreateTemp("", "dataagent_excel_*.xlsx")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	tempFile.Close() // Close it immediately so we can overwrite/copy into it
+	defer os.Remove(tempPath)
+
+	// Copy the target file to the temp path
+	if err := copyFile(targetPath, tempPath); err != nil {
+		return fmt.Errorf("copy to temp: %w", err)
+	}
+
+	// Make sure the file has broad permissions
+	os.Chmod(tempPath, 0666)
+
+	// AppleScript has issues with symlinks, so resolve them to the true absolute path
+	// e.g., /var is actually a symlink to /private/var on macOS
+	resolvedPath, err := filepath.EvalSymlinks(tempPath)
+	if err == nil {
+		tempPath = resolvedPath
+	}
+
 	script := fmt.Sprintf(`
 		tell application "Microsoft Excel"
 			set myWorkbook to open workbook workbook file name (POSIX file "%s" as string)
@@ -17,8 +65,17 @@ func ForceCalculate(filepath string) error {
 			save myWorkbook
 			close myWorkbook saving no
 		end tell
-	`, filepath)
+	`, tempPath)
 
 	cmd := exec.Command("osascript", "-e", script)
-	return cmd.Run()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("osascript run failed: %w, output: %s", err, string(out))
+	}
+
+	// Copy the calculated file back to the original location
+	if err := copyFile(tempPath, targetPath); err != nil {
+		return fmt.Errorf("copy back from temp: %w", err)
+	}
+
+	return nil
 }
