@@ -34,8 +34,21 @@ func copyFile(src, dst string) error {
 // copies the file to the globally accessible temp directory, runs the calculation
 // there, and copies it back.
 func ForceCalculate(targetPath string) error {
-	// Create a temporary file in the explicitly accessible temp directory
-	tempFile, err := os.CreateTemp("", "dataagent_excel_*.xlsx")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get user home dir: %w", err)
+	}
+	
+	// Use MS Office's shared group container on macOS.
+	// This directory is explicitly whitelisted by the App Sandbox for Microsoft Office apps,
+	// so Excel can open files here without triggering any TCC permission prompts.
+	officeContainer := filepath.Join(homeDir, "Library", "Group Containers", "UBF8T346G9.Office")
+	if err := os.MkdirAll(officeContainer, 0755); err != nil {
+		return fmt.Errorf("create office container dir: %w", err)
+	}
+
+	// Create a temporary file in the explicitly accessible Office container directory
+	tempFile, err := os.CreateTemp(officeContainer, "dataagent_excel_*.xlsx")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
