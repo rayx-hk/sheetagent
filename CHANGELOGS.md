@@ -39,6 +39,26 @@
 - `dataagent-design/planning/18-adaptive-retry-strategy.md`: 自适应重试策略 vs Best-of-N 的理论分析
 - `dataagent-design/planning/19-llm-context-caching-strategy.md`: 三层 LLM 上下文缓存架构设计
 
+### 9. 引入 macOS 原生 MS Excel 公式重算 (P0 修复)
+- `executor/msoffice.go`: 新增 `ForceCalculate`，通过 AppleScript 在后台静默唤起本地 Microsoft Excel 进行全量公式重算和保存。
+- 彻底解决了 `openpyxl` 写入公式后因无内置计算引擎导致评测系统读取到 `got=""`（空值）的问题。
+- 引入移花接木机制：自动将文件拷贝至 macOS Office 专属共享沙盒白名单目录（`~/Library/Group Containers/UBF8T346G9.Office`）执行 AppleScript，完美绕过 macOS App Sandbox / TCC 的访问权限弹窗打扰，支持全静默挂机评测和断点续传。
+- `eval/judge.go`: 在 `CompareFiles` 之前自动调用 `ForceCalculate`。
+- `executor/msoffice_test.go`: 补充 AppleScript 唤起 Excel 的自动化单元测试。
+
+### 10. API 调用网络层指数退避重试 (Exponential Backoff)
+- `model/ratelimit.go`: 新增 `doWithRetry` 泛型方法，封装 `Generate` 和 `Stream` 接口。
+- 应对 `502 Bad Gateway`、`400 Bad Request` 等瞬态网络和 API 错误，最高重试 4 次，初始间隔 2s，指数递增，极大提升了跑大批量 Benchmark 时的稳定性。
+
+### 11. 评测值归一化增强
+- `eval/compare.go`: `parseNumber` 支持财务负数格式解析（例如将 `(74.96)` 准确识别为 `-74.96`）。
+- `eval/compare.go`: `dateFormats` 新增对纯时间格式（如 `15:04:05`, `03:04 PM`）的兼容。
+- `eval/compare.go`: 新增 `compareLists` 方法，支持对包含逗号 `,` 或分号 `;` 的无序列表字符串进行切分、去空、排序后再对比，解决了结果列表顺序不一致导致的误判。
+
+### 12. Agent 引入思维链 (CoT) 规范
+- `agent/prompt/codeact.md`: 增加强制规范 `M0: Chain-of-Thought (CoT) Pseudo-Code`。
+- 强制要求模型在编写 Python 代码前，必须先在注释中写出 step-by-step 的伪代码计划，以此提升复杂数据清洗、排序、合并等任务的逻辑推理准确率。
+
 ---
 
 ## 2026-02-19
