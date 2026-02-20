@@ -73,10 +73,14 @@ func ForceCalculate(targetPath string) error {
 
 	script := fmt.Sprintf(`
 		tell application "Microsoft Excel"
-			set myWorkbook to open workbook workbook file name (POSIX file "%s" as string)
-			calculate full
-			save myWorkbook
-			close myWorkbook saving no
+			try
+				set display alerts to false
+				set myWorkbook to open workbook workbook file name (POSIX file "%s" as string) update links do not update links
+				calculate full
+				save myWorkbook
+				close myWorkbook saving no
+			end try
+			set display alerts to true
 		end tell
 	`, tempPath)
 
