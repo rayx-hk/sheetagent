@@ -160,11 +160,24 @@ func (r *Runner) runSingleCase(ctx context.Context, task Task, tc TestCase) Task
 		result.Duration = time.Since(start).Seconds()
 	}()
 
-	workDir := filepath.Join(r.cfg.OutputDir, fmt.Sprintf("%s_%d", task.ID, tc.No))
-	if err := os.MkdirAll(workDir, 0755); err != nil {
-		result.Error = fmt.Sprintf("create workdir: %v", err)
+	finalWorkDir := filepath.Join(r.cfg.OutputDir, fmt.Sprintf("%s_%d", task.ID, tc.No))
+	
+	// Create a temporary execution workspace to bypass macOS Sandbox/TCC prompts
+	// (which happen when Excel or Python tries to access files on Desktop/Documents).
+	// os.TempDir() gives an accessible path like /var/folders/...
+	tempWorkDir, err := os.MkdirTemp("", fmt.Sprintf("dataagent_bench_%s_%d_*", task.ID, tc.No))
+	if err != nil {
+		result.Error = fmt.Sprintf("create temp workdir: %v", err)
 		return result
 	}
+	defer func() {
+		// After task finishes, copy all artifacts from tempWorkDir to the finalWorkDir
+		os.MkdirAll(finalWorkDir, 0755)
+		_ = copyDirContents(tempWorkDir, finalWorkDir)
+		os.RemoveAll(tempWorkDir)
+	}()
+
+	workDir := tempWorkDir
 
 	inputCopy := filepath.Join(workDir, filepath.Base(tc.InputFile))
 	if err := copyFile(tc.InputFile, inputCopy); err != nil {
@@ -313,4 +326,29 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(d, s)
 	return err
+}
+
+func copyDirContents(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := os.MkdirAll(dstPath, 0755); err != nil {
+				return err
+			}
+			if err := copyDirContents(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
