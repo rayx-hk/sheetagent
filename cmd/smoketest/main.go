@@ -9,8 +9,8 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/rayx-hk/dataagent/config"
-	"github.com/rayx-hk/dataagent/internal/model"
+	"github.com/rayx-hk/sheetagent/config"
+	"github.com/rayx-hk/sheetagent/internal/model"
 )
 
 func main() {

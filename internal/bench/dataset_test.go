@@ -115,8 +115,8 @@ func TestSpreadsheetBenchDataset_RealDatasets(t *testing.T) {
 		dir  string
 		min  int
 	}{
-		{"400 verified", "/Users/razil/Desktop/razil/dev/opensource/dataagent-design/datasets/spreadsheetbench_verified_400", 300},
-		{"912 full", "/Users/razil/Desktop/razil/dev/opensource/dataagent-design/datasets/all_data_912_v0.1", 800},
+		{"400 verified", "/Users/razil/Desktop/razil/dev/opensource/sheetagent-design/datasets/spreadsheetbench_verified_400", 300},
+		{"912 full", "/Users/razil/Desktop/razil/dev/opensource/sheetagent-design/datasets/all_data_912_v0.1", 800},
 	}
 
 	for _, ds := range datasets {

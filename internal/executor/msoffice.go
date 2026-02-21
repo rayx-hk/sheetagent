@@ -48,7 +48,7 @@ func ForceCalculate(targetPath string) error {
 	}
 
 	// Create a temporary file in the explicitly accessible Office container directory
-	tempFile, err := os.CreateTemp(officeContainer, "dataagent_excel_*.xlsx")
+	tempFile, err := os.CreateTemp(officeContainer, "sheetagent_excel_*.xlsx")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}

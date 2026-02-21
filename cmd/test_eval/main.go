@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rayx-hk/dataagent/internal/sheet"
+	"github.com/rayx-hk/sheetagent/internal/sheet"
 )
 
 func main() {
-	path := "/Users/razil/Desktop/razil/dev/opensource/dataagent/output/run_20260220_12_bench400_claude-opus-4-6/50088_1/1_50088_init.xlsx"
+	path := "/Users/razil/Desktop/razil/dev/opensource/sheetagent/output/run_20260220_12_bench400_claude-opus-4-6/50088_1/1_50088_init.xlsx"
 
 	parser := sheet.NewParser()
 	sheets, err := parser.Parse(context.Background(), path)

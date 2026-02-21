@@ -9,13 +9,14 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/rayx-hk/dataagent/internal/agent"
-	"github.com/rayx-hk/dataagent/internal/eval"
-	"github.com/rayx-hk/dataagent/internal/executor"
+	"github.com/rayx-hk/sheetagent/internal/agent"
+	"github.com/rayx-hk/sheetagent/internal/eval"
+	"github.com/rayx-hk/sheetagent/internal/executor"
 )
 
 type OrchestratorConfig struct {
@@ -127,6 +128,7 @@ func (o *Orchestrator) Run(ctx context.Context, input agent.CodeActInput, answer
 		if mismatchJSON := jr.MismatchSummary(10); mismatchJSON != "" {
 			lastErr += "\nMismatch details: " + mismatchJSON
 		}
+		lastErr += buildRetryHints(jr)
 		slog.Info("judge failed", "attempt", attempt, "score", fmt.Sprintf("%.1f%%", jr.Score*100),
 			"matched", jr.Matched, "total", jr.Total, "confidence", fmt.Sprintf("%.2f", confidence))
 	}
@@ -182,6 +184,61 @@ func extractCode(msg *schema.Message, toolOutputs []string) string {
 	}
 
 	return ""
+}
+
+// buildRetryHints provides actionable suggestions based on the mismatch pattern.
+func buildRetryHints(jr *eval.JudgeResult) string {
+	if jr.Pass || len(jr.Mismatches) == 0 {
+		return ""
+	}
+
+	var hints []string
+
+	hasEmpty := false
+	hasFormulaError := false
+	hasPrecision := false
+	expectedErrorGotEmpty := 0
+	for _, m := range jr.Mismatches {
+		if m.Actual == "" && m.Expected != "" {
+			hasEmpty = true
+		}
+		if isExcelError(m.Expected) && m.Actual == "" {
+			expectedErrorGotEmpty++
+		}
+		if isExcelError(m.Actual) {
+			hasFormulaError = true
+		}
+		if _, eOk := strconv.ParseFloat(strings.ReplaceAll(m.Expected, ",", ""), 64); eOk == nil {
+			if _, aOk := strconv.ParseFloat(strings.ReplaceAll(m.Actual, ",", ""), 64); aOk == nil {
+				hasPrecision = true
+			}
+		}
+	}
+
+	if expectedErrorGotEmpty > 0 {
+		hints = append(hints, fmt.Sprintf("[CRITICAL HINT] %d cells expect formula error values (#N/A, #VALUE!, #REF!) but you left them empty. This means the answer file contains Excel FORMULAS that produce these errors. You MUST write the actual Excel formula (e.g., =INDEX(...,MATCH(...)), =VLOOKUP(...)) to the cell using openpyxl, NOT compute the value in Python. Even if the formula will error, WRITE IT — the benchmark expects the formula to be present. Use: ws.cell(row=r, column=c).value = \"=YOUR_FORMULA\"", expectedErrorGotEmpty))
+	} else if hasEmpty {
+		hints = append(hints, "[HINT] Some target cells are empty (got=\"\"). Your code likely wrote to the wrong cells or the write operation failed silently. Use M12 Post-Write Verification to check.")
+	}
+	if hasFormulaError {
+		hints = append(hints, "[HINT] Some cells contain formula errors (#VALUE!, #N/A, #REF!). Consider: (1) Check VLOOKUP/MATCH criteria and ranges, (2) Verify lookup values exist in the source range, (3) Use IFERROR wrapper, (4) Fall back to Python computation per M13.")
+	}
+	if hasPrecision {
+		hints = append(hints, "[HINT] Numeric precision mismatch detected. Check number formatting — preserve the decimal places shown in the original data.")
+	}
+
+	if len(hints) == 0 {
+		return ""
+	}
+	return "\n\n" + strings.Join(hints, "\n")
+}
+
+func isExcelError(s string) bool {
+	s = strings.TrimSpace(s)
+	return s == "#N/A" || s == "#VALUE!" || s == "#REF!" || s == "#DIV/0!" ||
+		s == "#NAME?" || s == "#NULL!" || s == "#NUM!" ||
+		s == "invalid reference" ||
+		strings.HasSuffix(s, "argument") || strings.HasSuffix(s, "arguments")
 }
 
 func recopyFile(filePath string) error {

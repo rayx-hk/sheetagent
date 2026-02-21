@@ -6,7 +6,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/openrouter"
 	"github.com/cloudwego/eino/components/model"
 
-	"github.com/rayx-hk/dataagent/config"
+	"github.com/rayx-hk/sheetagent/config"
 )
 
 func newOpenRouterModel(ctx context.Context, cfg config.ModelProviderConfig) (model.ToolCallingChatModel, error) {

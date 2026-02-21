@@ -1,4 +1,4 @@
-module github.com/rayx-hk/dataagent
+module github.com/rayx-hk/sheetagent
 
 go 1.24.2
 

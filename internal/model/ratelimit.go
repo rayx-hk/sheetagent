@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +55,21 @@ func NewRateLimitedModel(inner eimodel.ToolCallingChatModel, minInterval time.Du
 	}
 }
 
+func isNonRetryableError(err error) bool {
+	s := err.Error()
+	if strings.Contains(s, "413") {
+		return true
+	}
+	if strings.Contains(s, "streaming is strongly recommended") {
+		return true
+	}
+	// E015 is a transient proxy internal error — must retry
+	if strings.Contains(s, "400 Bad Request") && !strings.Contains(s, "E015") {
+		return true
+	}
+	return false
+}
+
 func doWithRetry[T any](ctx context.Context, op func() (T, error)) (T, error) {
 	var lastErr error
 	backoff := 2 * time.Second
@@ -72,11 +88,15 @@ func doWithRetry[T any](ctx context.Context, op func() (T, error)) (T, error) {
 			return zero, ctx.Err()
 		}
 
+		if isNonRetryableError(err) {
+			slog.Warn("non-retryable API error (payload too large), skipping retry", "error", err)
+			break
+		}
+
 		if i == maxRetries-1 {
 			break
 		}
 
-		// Add jitter to avoid thundering herd
 		jitter := time.Duration(time.Now().UnixNano()%1000) * time.Millisecond
 		actualBackoff := backoff + jitter
 

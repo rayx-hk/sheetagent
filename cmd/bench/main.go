@@ -12,13 +12,13 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	eimodel "github.com/cloudwego/eino/components/model"
 
-	"github.com/rayx-hk/dataagent/config"
-	"github.com/rayx-hk/dataagent/internal/agent"
-	"github.com/rayx-hk/dataagent/internal/bench"
-	"github.com/rayx-hk/dataagent/internal/eval"
-	"github.com/rayx-hk/dataagent/internal/executor"
-	"github.com/rayx-hk/dataagent/internal/model"
-	"github.com/rayx-hk/dataagent/internal/orchestrator"
+	"github.com/rayx-hk/sheetagent/config"
+	"github.com/rayx-hk/sheetagent/internal/agent"
+	"github.com/rayx-hk/sheetagent/internal/bench"
+	"github.com/rayx-hk/sheetagent/internal/eval"
+	"github.com/rayx-hk/sheetagent/internal/executor"
+	"github.com/rayx-hk/sheetagent/internal/model"
+	"github.com/rayx-hk/sheetagent/internal/orchestrator"
 )
 
 func main() {
@@ -31,15 +31,16 @@ func main() {
 	modelsPath := flag.String("models", "config/models.yaml", "Path to models.yaml")
 	resume := flag.Bool("resume", false, "Skip tasks that already passed in the output directory")
 	limit := flag.Int("limit", 0, "Limit the number of tasks to run (0 = no limit)")
+	taskFilter := flag.String("task-filter", "", "Path to file containing task IDs to run (one per line, format: taskID or taskID#caseNo)")
 	flag.Parse()
 
-	if err := run(*dataset, *concurrency, *maxRetry, *limit, *outputDir, *reportFile, *configPath, *modelsPath, *resume); err != nil {
+	if err := run(*dataset, *concurrency, *maxRetry, *limit, *outputDir, *reportFile, *configPath, *modelsPath, *resume, *taskFilter); err != nil {
 		slog.Error("benchmark failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(datasetName string, concurrency, maxRetry, limit int, outputDir, reportFile, configPath, modelsPath string, resume bool) error {
+func run(datasetName string, concurrency, maxRetry, limit int, outputDir, reportFile, configPath, modelsPath string, resume bool, taskFilterPath string) error {
 	config.LoadEnv()
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
@@ -68,6 +69,13 @@ func run(datasetName string, concurrency, maxRetry, limit int, outputDir, report
 	if err != nil {
 		return fmt.Errorf("load dataset: %w", err)
 	}
+	if taskFilterPath != "" {
+		tasks, err = bench.ApplyTaskFilter(tasks, taskFilterPath)
+		if err != nil {
+			return fmt.Errorf("apply task filter: %w", err)
+		}
+		slog.Info("task filter applied", "remaining", len(tasks), "filter", taskFilterPath)
+	}
 	if limit > 0 && len(tasks) > limit {
 		tasks = tasks[:limit]
 	}
@@ -81,15 +89,17 @@ func run(datasetName string, concurrency, maxRetry, limit int, outputDir, report
 	slog.Info("model router created")
 
 	rateInterval := 3 * time.Second
-	wrapRL := func(role model.Role) (eimodel.ToolCallingChatModel, error) {
+	wrapModel := func(role model.Role) (eimodel.ToolCallingChatModel, error) {
 		m, err := router.Get(role)
 		if err != nil {
 			return nil, err
 		}
-		return model.NewRateLimitedModel(m, rateInterval, string(role)), nil
+		fs := model.NewForceStreamModel(m)
+		rl := model.NewRateLimitedModel(fs, rateInterval, string(role))
+		return model.NewContextManagedModel(rl, 0), nil
 	}
 
-	coderModel, err := wrapRL(model.RoleCoder)
+	coderModel, err := wrapModel(model.RoleCoder)
 	if err != nil {
 		return err
 	}

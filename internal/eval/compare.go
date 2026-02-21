@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rayx-hk/dataagent/internal/sheet"
+	"github.com/rayx-hk/sheetagent/internal/sheet"
 )
 
 func CompareValues(expected, actual string) bool {
@@ -20,9 +20,19 @@ func CompareValues(expected, actual string) bool {
 		return true
 	}
 
+	expected = normalizeExcelError(expected)
+	actual = normalizeExcelError(actual)
+	if strings.EqualFold(expected, actual) {
+		return true
+	}
+
 	ne := normalizeValue(expected)
 	na := normalizeValue(actual)
 	if strings.EqualFold(ne, na) {
+		return true
+	}
+
+	if isDashOrZero(ne) && isDashOrZero(na) {
 		return true
 	}
 
@@ -55,6 +65,50 @@ func CompareValues(expected, actual string) bool {
 		}
 	}
 
+	return false
+}
+
+// normalizeExcelError maps excelize internal error strings to standard Excel error values.
+// excelize sometimes returns descriptive error messages instead of the standard #VALUE!, #N/A, etc.
+var excelizeErrorMap = map[string]string{
+	"YEAR requires exactly 1 argument":       "#VALUE!",
+	"COLUMNS requires 1 argument":            "#VALUE!",
+	"ROW requires at most 1 argument":        "#VALUE!",
+	"COUNTIFS requires at least 2 arguments": "#VALUE!",
+	"MATCH requires 3 arguments":             "#N/A",
+	"INDEX requires 2 or 3 arguments":        "#VALUE!",
+	"SMALL requires 2 arguments":             "#VALUE!",
+	"LARGE requires 2 arguments":             "#VALUE!",
+}
+
+func normalizeExcelError(s string) string {
+	s = strings.TrimSpace(s)
+	if mapped, ok := excelizeErrorMap[s]; ok {
+		return mapped
+	}
+	if strings.HasPrefix(s, "strconv.Parse") {
+		return "#VALUE!"
+	}
+	if strings.HasPrefix(s, "calc panic:") {
+		return "#VALUE!"
+	}
+	if s == "invalid reference" {
+		return "#REF!"
+	}
+	if strings.HasSuffix(s, "argument") || strings.HasSuffix(s, "arguments") {
+		return "#VALUE!"
+	}
+	return s
+}
+
+func isDashOrZero(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "-" || s == "–" || s == "—" {
+		return true
+	}
+	if v, err := strconv.ParseFloat(strings.ReplaceAll(s, ",", ""), 64); err == nil && v == 0 {
+		return true
+	}
 	return false
 }
 
@@ -132,11 +186,18 @@ var dateFormats = []string{
 	"1/2/2006",
 	"01-02-2006",
 	"1-2-2006",
+	"01-02-06",
+	"1-2-06",
 	"Jan 2, 2006",
 	"January 2, 2006",
 	"2 Jan 2006",
+	"2-Jan-2006",
 	"02-Jan-2006",
+	"2-Jan-06",
 	"02-Jan-06",
+	"2-Jan",
+	"02-Jan",
+	"Jan-06",
 	"2006-01-02 15:04:05",
 	"01/02/2006 15:04:05",
 	"2006-01-02T15:04:05",

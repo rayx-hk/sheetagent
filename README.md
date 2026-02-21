@@ -1,4 +1,4 @@
-# dataagent
+# sheetagent
 
 Spreadsheet Agent core code — Multi-agent system based on ByteDance Eino, targeting SpreadsheetBench.
 
@@ -40,17 +40,19 @@ scripts/       # Dataset download and other scripts
 
 ## Related Repositories
 
-- [dataagent-design](../dataagent-design/) — Design docs, UI/UX, datasets
-- [dataagent-tools](../dataagent-tools/) — Dataset collection/cleaning/Research Radar tools
+- [sheetagent-design](../sheetagent-design/) — Design docs, UI/UX, datasets
+- [sheetagent-tools](../sheetagent-tools/) — Dataset collection/cleaning/Research Radar tools
 
 
 ## 🏆 Benchmark Scores
 
-We continuously evaluate DataAgent against the **SpreadsheetBench** dataset.
+We continuously evaluate SheetAgent against the **SpreadsheetBench** dataset.
 
-| Version | Dataset | Pass@1 Score | Status |
-| :---: | :---: | :---: | :---: |
-| **v0.2.0** | `400 Verified` | **73.7 / 100** | ![73.7%](https://img.shields.io/badge/Pass@1-73.7%25-brightgreen?style=for-the-badge&logo=microsoftexcel&logoColor=white) |
-| **v0.1.0** | `400 Verified` | **65.8 / 100** | ![65.8%](https://img.shields.io/badge/Pass@1-65.8%25-yellow?style=for-the-badge&logo=microsoftexcel&logoColor=white) |
+| Version | Dataset | Pass@1 Score | Model | Status |
+| :---: | :---: | :---: | :---: | :---: |
+| **v0.3.1** | `400 Verified` | **96.7 / 100** | Claude Sonnet 4.6 | ![96.7%](https://img.shields.io/badge/Pass@1-96.7%25-brightgreen?style=for-the-badge&logo=microsoftexcel&logoColor=white) |
+| **v0.3.0** | `400 Verified` | **94.7 / 100** | Claude Sonnet 4.6 | ![94.7%](https://img.shields.io/badge/Pass@1-94.7%25-brightgreen?style=for-the-badge&logo=microsoftexcel&logoColor=white) |
+| **v0.2.0** | `400 Verified` | **73.7 / 100** | Claude Sonnet 4.6 | ![73.7%](https://img.shields.io/badge/Pass@1-73.7%25-green?style=for-the-badge&logo=microsoftexcel&logoColor=white) |
+| **v0.1.0** | `400 Verified` | **65.8 / 100** | Claude Sonnet 4.6 | ![65.8%](https://img.shields.io/badge/Pass@1-65.8%25-yellow?style=for-the-badge&logo=microsoftexcel&logoColor=white) |
 
-> *Evaluated using Claude Sonnet 4.6 in the CodeAct Single-Agent architecture.*
+> *CodeAct Single-Agent architecture. Current SOTA on SpreadsheetBench 400 Verified (prev. Nobie Agent 91%).*

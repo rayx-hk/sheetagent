@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/rayx-hk/dataagent/config"
-	"github.com/rayx-hk/dataagent/internal/agent"
-	"github.com/rayx-hk/dataagent/internal/eval"
-	"github.com/rayx-hk/dataagent/internal/executor"
-	"github.com/rayx-hk/dataagent/internal/model"
-	"github.com/rayx-hk/dataagent/internal/orchestrator"
+	"github.com/rayx-hk/sheetagent/config"
+	"github.com/rayx-hk/sheetagent/internal/agent"
+	"github.com/rayx-hk/sheetagent/internal/eval"
+	"github.com/rayx-hk/sheetagent/internal/executor"
+	"github.com/rayx-hk/sheetagent/internal/model"
+	"github.com/rayx-hk/sheetagent/internal/orchestrator"
 )
 
 func main() {
@@ -53,10 +53,11 @@ func run(instruction, inputFile, answerPosition, configPath, modelsPath string) 
 		return fmt.Errorf("init model router: %w", err)
 	}
 
-	coderModel, err := router.Get(model.RoleCoder)
+	rawModel, err := router.Get(model.RoleCoder)
 	if err != nil {
 		return err
 	}
+	coderModel := model.NewContextManagedModel(model.NewForceStreamModel(rawModel), 0)
 
 	exec := executor.NewEmbedded(cfg.Executor.PythonPath, cfg.Executor.Timeout)
 	defer exec.Close()

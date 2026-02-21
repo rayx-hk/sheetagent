@@ -23,16 +23,19 @@ const (
 )
 
 // ClassifyFailure infers a FailureCategory from an error message string.
+// Returns empty string for empty errMsg (task passed, no failure to classify).
 func ClassifyFailure(errMsg string) FailureCategory {
 	if errMsg == "" {
-		return FailCategoryValueMismatch
+		return ""
 	}
 	s := strings.ToLower(errMsg)
 	switch {
 	case strings.Contains(s, "not found in toolsnode"):
 		return FailCategoryHallucinatedTool
 	case strings.Contains(s, "400 bad request") || strings.Contains(s, "403 forbidden") ||
-		strings.Contains(s, "500 internal") || strings.Contains(s, "rate limit"):
+		strings.Contains(s, "500 internal") || strings.Contains(s, "rate limit") ||
+		strings.Contains(s, "413") || strings.Contains(s, "503 service unavailable") ||
+		strings.Contains(s, "request entity too large"):
 		return FailCategoryAPIError
 	case strings.Contains(s, "cells matched") || strings.Contains(s, "mismatch"):
 		return FailCategoryValueMismatch
@@ -43,7 +46,7 @@ func ClassifyFailure(errMsg string) FailureCategory {
 	case strings.Contains(s, "agent error") || strings.Contains(s, "no response from agent"):
 		return FailCategoryAgentError
 	default:
-		return FailCategoryValueMismatch
+		return FailCategoryUnknown
 	}
 }
 
@@ -90,10 +93,14 @@ func (r *BenchReport) CalcPassRate() {
 }
 
 func (r *BenchReport) AddResult(taskID, taskType string, pass bool, errMsg string) {
+	cat := ClassifyFailure(errMsg)
+	if !pass && cat == "" {
+		cat = FailCategoryValueMismatch
+	}
 	r.AddDetailedResult(FailureDetail{
 		TaskID:          taskID,
 		InstructionType: taskType,
-		Category:        ClassifyFailure(errMsg),
+		Category:        cat,
 		Reason:          errMsg,
 	}, pass)
 }

@@ -14,6 +14,6 @@ docker:
 bench:
   concurrency: 2
   max_retry: 2
-  dataset_dir: /Users/razil/Desktop/razil/dev/opensource/dataagent-design/datasets
+  dataset_dir: /Users/razil/Desktop/razil/dev/opensource/sheetagent-design/datasets
   output_dir: ./output
   report_dir: ./reports

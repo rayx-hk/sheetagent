@@ -7,7 +7,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/claude"
 	"github.com/cloudwego/eino/components/model"
 
-	"github.com/rayx-hk/dataagent/config"
+	"github.com/rayx-hk/sheetagent/config"
 )
 
 func newClaudeModel(ctx context.Context, cfg config.ModelProviderConfig) (model.ToolCallingChatModel, error) {

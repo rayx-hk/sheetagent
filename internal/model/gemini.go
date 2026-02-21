@@ -7,7 +7,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"google.golang.org/genai"
 
-	"github.com/rayx-hk/dataagent/config"
+	"github.com/rayx-hk/sheetagent/config"
 )
 
 func newGeminiModel(ctx context.Context, cfg config.ModelProviderConfig) (model.ToolCallingChatModel, error) {

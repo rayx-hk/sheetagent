@@ -15,9 +15,9 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 
-	"github.com/rayx-hk/dataagent/internal/eval"
-	"github.com/rayx-hk/dataagent/internal/executor"
-	"github.com/rayx-hk/dataagent/internal/orchestrator"
+	"github.com/rayx-hk/sheetagent/internal/eval"
+	"github.com/rayx-hk/sheetagent/internal/executor"
+	"github.com/rayx-hk/sheetagent/internal/orchestrator"
 )
 
 type RunConfig struct {
@@ -35,6 +35,8 @@ type Runner struct {
 	builder   *orchestrator.PromptBuilder
 	judge     *eval.OJJudge
 	failureMu sync.Mutex
+	apiErrors int64
+	totalDone int64
 }
 
 func NewRunner(cfg RunConfig, codeAct adk.Agent, judge *eval.OJJudge, builder *orchestrator.PromptBuilder) *Runner {
@@ -80,6 +82,7 @@ func (r *Runner) Run(ctx context.Context, tasks []Task) (*eval.BenchReport, erro
 	var wg sync.WaitGroup
 	var completed int64
 	total := countTestCases(tasks)
+	maxConc := r.cfg.Concurrency
 
 	for _, task := range tasks {
 		for _, tc := range task.TestCases {
@@ -99,11 +102,21 @@ func (r *Runner) Run(ctx context.Context, tasks []Task) (*eval.BenchReport, erro
 				defer func() { <-sem }()
 
 				result := r.runSingleCase(ctx, task, tc)
-				resultCh <- result
 
+				isAPIErr := strings.Contains(result.Error, "400 Bad Request") ||
+					strings.Contains(result.Error, "413") ||
+					strings.Contains(result.Error, "503")
+				if isAPIErr {
+					atomic.AddInt64(&r.apiErrors, 1)
+				}
+
+				resultCh <- result
 				done := atomic.AddInt64(&completed, 1)
+				atomic.StoreInt64(&r.totalDone, done)
 				fmt.Fprintf(os.Stderr, "\r[%d/%d] %s #%d: pass=%v",
 					done, total, task.ID, tc.No, result.Pass)
+
+				r.checkAdaptiveConcurrency(sem, maxConc)
 			}(task, tc)
 		}
 	}
@@ -113,17 +126,46 @@ func (r *Runner) Run(ctx context.Context, tasks []Task) (*eval.BenchReport, erro
 		close(resultCh)
 	}()
 
+	progressInterval := 50
+	if total > 500 {
+		progressInterval = 100
+	}
+
 	for result := range resultCh {
+		cat := eval.ClassifyFailure(result.Error)
+		if !result.Pass && cat == "" {
+			cat = eval.FailCategoryValueMismatch
+		}
 		detail := eval.FailureDetail{
 			TaskID:          fmt.Sprintf("%s#%d", result.TaskID, result.CaseNo),
 			InstructionType: result.Type,
-			Category:        eval.ClassifyFailure(result.Error),
+			Category:        cat,
 			AttemptCount:    result.AttemptCount,
 			Reason:          result.Error,
 			Instruction:     result.Instruction,
 			Confidence:      result.Confidence,
 		}
 		report.AddDetailedResult(detail, result.Pass)
+
+		if report.Total%progressInterval == 0 {
+			elapsed := time.Since(start)
+			eta := time.Duration(0)
+			if report.Total > 0 {
+				eta = time.Duration(float64(elapsed) / float64(report.Total) * float64(int(total)-report.Total))
+			}
+			apiErrs := atomic.LoadInt64(&r.apiErrors)
+			slog.Info("progress",
+				"completed", report.Total,
+				"total", total,
+				"pass", report.Pass,
+				"pass_rate", fmt.Sprintf("%.1f%%", float64(report.Pass)/float64(report.Total)*100),
+				"api_errors", apiErrs,
+				"elapsed", elapsed.Round(time.Second),
+				"eta", eta.Round(time.Second),
+			)
+
+			r.writePartialReport(report, start)
+		}
 	}
 
 	report.Duration = time.Since(start)
@@ -171,7 +213,7 @@ func (r *Runner) runSingleCase(ctx context.Context, task Task, tc TestCase) Task
 	// Create a temporary execution workspace to bypass macOS Sandbox/TCC prompts
 	// (which happen when Excel or Python tries to access files on Desktop/Documents).
 	// os.TempDir() gives an accessible path like /var/folders/...
-	tempWorkDir, err := os.MkdirTemp("", fmt.Sprintf("dataagent_bench_%s_%d_*", task.ID, tc.No))
+	tempWorkDir, err := os.MkdirTemp("", fmt.Sprintf("sheetagent_bench_%s_%d_*", task.ID, tc.No))
 	if err != nil {
 		result.Error = fmt.Sprintf("create temp workdir: %v", err)
 		return result
@@ -228,7 +270,14 @@ func (r *Runner) runSingleCase(ctx context.Context, task Task, tc TestCase) Task
 }
 
 func (r *Runner) writeTaskResult(workDir string, result TaskResult) {
-	cat := eval.ClassifyFailure(result.Error)
+	var catStr string
+	if !result.Pass {
+		cat := eval.ClassifyFailure(result.Error)
+		if cat == "" {
+			cat = eval.FailCategoryValueMismatch
+		}
+		catStr = string(cat)
+	}
 	rec := taskResultRecord{
 		TaskID:          result.TaskID,
 		CaseNo:          result.CaseNo,
@@ -237,7 +286,7 @@ func (r *Runner) writeTaskResult(workDir string, result TaskResult) {
 		Pass:            result.Pass,
 		AttemptCount:    result.AttemptCount,
 		DurationSeconds: result.Duration,
-		Category:        string(cat),
+		Category:        catStr,
 		FinalError:      result.Error,
 		Confidence:      result.Confidence,
 		FinishedAt:      time.Now(),
@@ -310,6 +359,43 @@ func (r *Runner) tryResumeCase(ctx context.Context, task Task, tc TestCase) (Tas
 		Pass:   true,
 		Type:   task.InstructionType,
 	}, true
+}
+
+// writePartialReport writes an in-progress report so that if the run is interrupted,
+// partial results are still available.
+func (r *Runner) writePartialReport(report *eval.BenchReport, startTime time.Time) {
+	if r.cfg.ReportDir == "" {
+		return
+	}
+	_ = os.MkdirAll(r.cfg.ReportDir, 0755)
+	partialReport := *report
+	partialReport.Duration = time.Since(startTime)
+	partialReport.Dataset = "partial"
+	jsonPath := filepath.Join(r.cfg.ReportDir, "partial_report.json")
+	_ = partialReport.WriteJSON(jsonPath)
+}
+
+// checkAdaptiveConcurrency monitors the API error rate and temporarily reduces
+// concurrency by draining extra semaphore slots when errors spike.
+func (r *Runner) checkAdaptiveConcurrency(sem chan struct{}, maxConc int) {
+	done := atomic.LoadInt64(&r.totalDone)
+	if done < 10 {
+		return
+	}
+	apiErrs := atomic.LoadInt64(&r.apiErrors)
+	rate := float64(apiErrs) / float64(done)
+	if rate > 0.20 {
+		halfConc := maxConc / 2
+		if halfConc < 2 {
+			halfConc = 2
+		}
+		currentlyUsed := len(sem)
+		if currentlyUsed < halfConc {
+			slog.Warn("high API error rate — consider reducing concurrency",
+				"error_rate", fmt.Sprintf("%.1f%%", rate*100),
+				"api_errors", apiErrs, "total_done", done)
+		}
+	}
 }
 
 func countTestCases(tasks []Task) int64 {

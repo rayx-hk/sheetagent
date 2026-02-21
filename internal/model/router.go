@@ -7,7 +7,7 @@ import (
 
 	eimodel "github.com/cloudwego/eino/components/model"
 
-	"github.com/rayx-hk/dataagent/config"
+	"github.com/rayx-hk/sheetagent/config"
 )
 
 type Role string

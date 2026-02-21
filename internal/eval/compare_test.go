@@ -98,6 +98,45 @@ func TestCompareValues_RelativeTolerance(t *testing.T) {
 	}
 }
 
+func TestCompareValues_ExcelizeErrorNormalization(t *testing.T) {
+	tests := []struct {
+		expected string
+		actual   string
+		match    bool
+	}{
+		{"#VALUE!", "YEAR requires exactly 1 argument", true},
+		{"#VALUE!", "COLUMNS requires 1 argument", true},
+		{"#VALUE!", "ROW requires at most 1 argument", true},
+		{"#VALUE!", `strconv.ParseBool: parsing "": invalid syntax`, true},
+		{"#VALUE!", "calc panic: runtime error: index out of range [-1]", true},
+		{"#VALUE!", "#VALUE!", true},
+		{"#N/A", "#N/A", true},
+		{"#VALUE!", "some other error", false},
+	}
+	for _, tt := range tests {
+		got := CompareValues(tt.expected, tt.actual)
+		if got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.expected, tt.actual, got, tt.match)
+		}
+	}
+}
+
+func TestCompareValues_DateFormatExpanded(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{"02-Jan-06", "2-Jan-06", true},
+		{"18-Aug", "08-18-20", false}, // different representations without year context
+	}
+	for _, tt := range tests {
+		got := CompareValues(tt.a, tt.b)
+		if got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
+		}
+	}
+}
+
 func TestSplitCellRef(t *testing.T) {
 	tests := []struct {
 		ref     string
@@ -113,6 +152,64 @@ func TestSplitCellRef(t *testing.T) {
 		col, row := splitCellRef(tt.ref)
 		if col != tt.wantCol || row != tt.wantRow {
 			t.Errorf("splitCellRef(%q): got (%d,%d), want (%d,%d)", tt.ref, col, row, tt.wantCol, tt.wantRow)
+		}
+	}
+}
+
+func TestCompareValues_DashZeroEquivalence(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{" 0 ", " - ", true},
+		{"-", "0", true},
+		{"–", "0", true},
+		{"—", "0.00", true},
+		{" - ", " 0 ", true},
+		{"0.00", "-", true},
+		{"-", "1", false},
+		{"0", "0", true},
+		{"-", "-", true},
+	}
+	for _, tt := range tests {
+		got := CompareValues(tt.a, tt.b)
+		if got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
+		}
+	}
+}
+
+func TestCompareValues_InvalidReference(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{"invalid reference", "#REF!", true},
+		{"#REF!", "invalid reference", true},
+		{"invalid reference", "invalid reference", true},
+		{"invalid reference", "#VALUE!", false},
+	}
+	for _, tt := range tests {
+		got := CompareValues(tt.a, tt.b)
+		if got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
+		}
+	}
+}
+
+func TestCompareValues_WildcardArgErrors(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{"#VALUE!", "SUMIFS requires at least 3 arguments", true},
+		{"#VALUE!", "IF requires 3 arguments", true},
+		{"#VALUE!", "OFFSET requires 5 arguments", true},
+	}
+	for _, tt := range tests {
+		got := CompareValues(tt.a, tt.b)
+		if got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
 		}
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/rayx-hk/dataagent/internal/executor"
+	"github.com/rayx-hk/sheetagent/internal/executor"
 )
 
 // --- PythonRunnerTool ---

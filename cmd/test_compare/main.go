@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rayx-hk/dataagent/internal/eval"
+	"github.com/rayx-hk/sheetagent/internal/eval"
 )
 
 func main() {
-	b1, err := os.ReadFile("/Users/razil/Desktop/razil/dev/opensource/dataagent/reports/bench_400_20260220_102608.json")
+	b1, err := os.ReadFile("/Users/razil/Desktop/razil/dev/opensource/sheetagent/reports/bench_400_20260220_102608.json")
 	if err != nil { panic(err) }
-	b2, err := os.ReadFile("/Users/razil/Desktop/razil/dev/opensource/dataagent/reports/bench_400_20260220_131406.json")
+	b2, err := os.ReadFile("/Users/razil/Desktop/razil/dev/opensource/sheetagent/reports/bench_400_20260220_131406.json")
 	if err != nil { panic(err) }
 
 	var r1, r2 eval.BenchReport

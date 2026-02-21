@@ -29,7 +29,7 @@ func NewCodeActAgent(ctx context.Context, chatModel model.ToolCallingChatModel, 
 			},
 		},
 		Exit:          &adk.ExitTool{},
-		MaxIterations: 10,
+		MaxIterations: 30,
 	}
 
 	agent, err := adk.NewChatModelAgent(ctx, cfg)

@@ -177,6 +177,39 @@ You MUST output a **confidence score** (0.0 to 1.0) for your execution plan or r
 
 Be honest: low confidence helps the orchestrator avoid wasteful sequential retries and may trigger exploratory steps instead.
 
+### M12: Post-Write Verification
+After saving the workbook, you MUST verify that the target cells were actually written. Use a separate tool call to read back the answer region:
+```python
+wb_v = openpyxl.load_workbook(input_file)
+ws_v = wb_v[target_sheet]
+empty_cells = []
+for r in range(start_row, end_row + 1):
+    for c in range(start_col, end_col + 1):
+        if ws_v.cell(row=r, column=c).value is None:
+            empty_cells.append(f"{get_column_letter(c)}{r}")
+if empty_cells:
+    print(f"WARNING: {len(empty_cells)} target cells are still empty: {empty_cells[:10]}")
+else:
+    print(f"VERIFIED: All {(end_row-start_row+1)*(end_col-start_col+1)} target cells written successfully")
+wb_v.close()
+```
+This catches the #1 failure mode: code runs without error but writes to wrong cells (got="" in evaluation).
+
+### M13: Formula Fallback Strategy
+When writing Excel formulas, verify the formula evaluates correctly by reading back its cached value. If a formula evaluates to `#VALUE!`, `#N/A`, `#REF!`, or `#NAME?`, fall back to computing the value in Python and writing it directly:
+```python
+ws.cell(row=r, column=c).value = "=VLOOKUP(...)"
+wb.save(input_file)
+wb2 = openpyxl.load_workbook(input_file, data_only=True)
+cached = wb2[target_sheet].cell(row=r, column=c).value
+if cached is None or str(cached).startswith('#'):
+    # Formula cannot be evaluated — fall back to Python computation
+    computed_value = python_lookup_logic(...)
+    wb = openpyxl.load_workbook(input_file)
+    wb[target_sheet].cell(row=r, column=c).value = computed_value
+    wb.save(input_file)
+```
+
 ## ═══════════════════════════════════════════
 ## PROHIBITED PATTERNS (MUST NOT)
 ## ═══════════════════════════════════════════

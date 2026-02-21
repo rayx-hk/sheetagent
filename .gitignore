@@ -1,4 +1,5 @@
 bin/
+bench
 output/
 reports/
 data/sample_data_200/
