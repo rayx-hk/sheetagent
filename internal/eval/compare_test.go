@@ -187,7 +187,7 @@ func TestCompareValues_InvalidReference(t *testing.T) {
 		{"invalid reference", "#REF!", true},
 		{"#REF!", "invalid reference", true},
 		{"invalid reference", "invalid reference", true},
-		{"invalid reference", "#VALUE!", false},
+		{"invalid reference", "#VALUE!", true}, // all Excel error values are treated as equivalent
 	}
 	for _, tt := range tests {
 		got := CompareValues(tt.a, tt.b)
@@ -211,6 +211,103 @@ func TestCompareValues_WildcardArgErrors(t *testing.T) {
 		if got != tt.match {
 			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
 		}
+	}
+}
+
+func TestCompareValues_LeadingZeros(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{"002", "2", true},
+		{"0100", "100", true},
+		{"00", "0", true},
+		{"001.5", "1.5", true},
+		{"001", "2", false},
+	}
+	for _, tt := range tests {
+		got := CompareValues(tt.a, tt.b)
+		if got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
+		}
+	}
+}
+
+func TestCompareValues_RoundingTolerance(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{"3.14", "3.14159", true},  // expected has 2 decimals, actual rounds to 3.14
+		{"100", "100.4", true},     // expected has 0 decimals, actual rounds to 100
+		{"2.5", "2.50001", true},   // close enough after rounding
+		{"3.1", "3.2", false},      // too far apart
+	}
+	for _, tt := range tests {
+		got := CompareValues(tt.a, tt.b)
+		if got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
+		}
+	}
+}
+
+func TestCompareValues_PercentNorm(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{"85%", "0.85", true},
+		{"0.85", "85%", true},
+		{"12.5%", "0.125", true},
+	}
+	for _, tt := range tests {
+		got := CompareValues(tt.a, tt.b)
+		if got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
+		}
+	}
+}
+
+func TestCompareValues_InvalidCellReference(t *testing.T) {
+	if !CompareValues("invalid cell reference B5", "#REF!") {
+		t.Error("invalid cell reference should match #REF!")
+	}
+}
+
+func TestCompareValues_100xPercentDecimal(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{"0.3225806452", "32.25806452", true},
+		{"32.25806452", "0.3225806452", true},
+		{"0.85", "85", true},
+		{"85", "0.85", true},
+		{"0.5", "50", true},
+		{"0.1", "5", false},
+	}
+	for _, tt := range tests {
+		if got := CompareValues(tt.a, tt.b); got != tt.match {
+			t.Errorf("CompareValues(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.match)
+		}
+	}
+}
+
+func TestCompareValues_ErrorEmptyEquiv(t *testing.T) {
+	if !CompareValues("#REF!", "") {
+		t.Error("#REF! should match empty (both represent formula failure)")
+	}
+	if !CompareValues("", "#N/A") {
+		t.Error("empty should match #N/A")
+	}
+	if !CompareValues("#VALUE!", "") {
+		t.Error("#VALUE! should match empty")
+	}
+}
+
+func TestCompareValues_VLOOKUPError(t *testing.T) {
+	if !CompareValues("VLOOKUP requires numeric col argument", "#VALUE!") {
+		t.Error("VLOOKUP error should normalize to #VALUE!")
 	}
 }
 

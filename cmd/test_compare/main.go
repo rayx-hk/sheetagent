@@ -9,9 +9,14 @@ import (
 )
 
 func main() {
-	b1, err := os.ReadFile("/Users/razil/Desktop/razil/dev/opensource/sheetagent/reports/bench_400_20260220_102608.json")
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: test_compare <report1.json> <report2.json>")
+		os.Exit(1)
+	}
+
+	b1, err := os.ReadFile(os.Args[1])
 	if err != nil { panic(err) }
-	b2, err := os.ReadFile("/Users/razil/Desktop/razil/dev/opensource/sheetagent/reports/bench_400_20260220_131406.json")
+	b2, err := os.ReadFile(os.Args[2])
 	if err != nil { panic(err) }
 
 	var r1, r2 eval.BenchReport

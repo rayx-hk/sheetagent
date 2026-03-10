@@ -21,17 +21,20 @@ const (
 
 type ModelRouter struct {
 	providers map[Role][]eimodel.ToolCallingChatModel
+	configs   map[Role]config.RoleModelConfig
 }
 
 func NewRouter(ctx context.Context, cfg config.ModelsConfig) (*ModelRouter, error) {
-	router := &ModelRouter{providers: make(map[Role][]eimodel.ToolCallingChatModel)}
-	roles := map[Role]config.RoleModelConfig{
-		RolePlanner:   cfg.Planner,
-		RoleCoder:     cfg.Coder,
-		RoleInformer:  cfg.Informer,
-		RoleEvaluator: cfg.Evaluator,
+	router := &ModelRouter{
+		providers: make(map[Role][]eimodel.ToolCallingChatModel),
+		configs: map[Role]config.RoleModelConfig{
+			RolePlanner:   cfg.Planner,
+			RoleCoder:     cfg.Coder,
+			RoleInformer:  cfg.Informer,
+			RoleEvaluator: cfg.Evaluator,
+		},
 	}
-	for role, rc := range roles {
+	for role, rc := range router.configs {
 		primary, err := NewChatModel(ctx, rc.Primary)
 		if err != nil {
 			return nil, fmt.Errorf("model for %s: %w", role, err)
@@ -64,4 +67,14 @@ func (r *ModelRouter) GetFallback(role Role) (eimodel.ToolCallingChatModel, erro
 		return nil, fmt.Errorf("no fallback model for role: %s", role)
 	}
 	return m[1], nil
+}
+
+// PromptCacheEnabled returns whether prompt caching is configured for the
+// primary model of the given role.
+func (r *ModelRouter) PromptCacheEnabled(role Role) bool {
+	rc, ok := r.configs[role]
+	if !ok {
+		return false
+	}
+	return rc.Primary.PromptCache
 }

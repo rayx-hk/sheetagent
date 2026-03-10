@@ -9,7 +9,11 @@ import (
 )
 
 func main() {
-	path := "/Users/razil/Desktop/razil/dev/opensource/sheetagent/output/run_20260220_12_bench400_claude-opus-4-6/50088_1/1_50088_init.xlsx"
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: test_eval <xlsx-path>")
+		os.Exit(1)
+	}
+	path := os.Args[1]
 
 	parser := sheet.NewParser()
 	sheets, err := parser.Parse(context.Background(), path)

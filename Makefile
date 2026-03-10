@@ -1,6 +1,5 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-GO_LDFLAGS := -ldflags "-X main.version=$(VERSION)"
-
+BUILD_TIME := $(shell date +%Y%m%d%H%M)
+GO_LDFLAGS := -ldflags "-X main.version=$(BUILD_TIME)"
 .PHONY: build precheck bench-200 bench-400 bench-912 bench-full docker-build docker-up docker-down download-dataset test lint clean
 
 build:

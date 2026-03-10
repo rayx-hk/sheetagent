@@ -3,14 +3,15 @@ package agent
 import "github.com/cloudwego/eino/schema"
 
 type CodeActInput struct {
-	Instruction     string `json:"instruction"`
-	AnswerPosition  string `json:"answer_position"`
-	InstructionType string `json:"instruction_type"`
-	WorkDir         string `json:"work_dir"`
-	InputFile       string `json:"input_file"`
-	Compressed      string `json:"compressed"` // Go SheetCompressor output
-	PreviousError   string `json:"previous_error,omitempty"` // Go OJ Judge output/diff
-	Attempt         int    `json:"attempt"`
+	Instruction      string `json:"instruction"`
+	AnswerPosition   string `json:"answer_position"`
+	InstructionType  string `json:"instruction_type"`
+	WorkDir          string `json:"work_dir"`
+	InputFile        string `json:"input_file"`
+	Compressed       string `json:"compressed"` // Go SheetCompressor output
+	PreviousError    string `json:"previous_error,omitempty"` // Go OJ Judge output/diff
+	Attempt          int    `json:"attempt"`
+	PromptAdditions  string `json:"prompt_additions,omitempty"` // SOP-injected: formula strategy, skills, failure warnings
 }
 
 type ExecResult struct {

@@ -29,7 +29,7 @@ func NewCodeActAgent(ctx context.Context, chatModel model.ToolCallingChatModel, 
 			},
 		},
 		Exit:          &adk.ExitTool{},
-		MaxIterations: 30,
+		MaxIterations: 15,
 	}
 
 	agent, err := adk.NewChatModelAgent(ctx, cfg)
@@ -44,6 +44,11 @@ func NewCodeActAgent(ctx context.Context, chatModel model.ToolCallingChatModel, 
 func RunCodeAct(ctx context.Context, ag adk.Agent, input CodeActInput) (*schema.Message, []string, []*schema.Message, error) {
 	prevErrSec := ""
 	if input.PreviousError != "" {
+		// Truncate error feedback to prevent context overflow
+		prevErr := input.PreviousError
+		if len(prevErr) > 4000 {
+			prevErr = prevErr[:4000] + "\n...[feedback truncated to prevent context overflow]"
+		}
 		prevErrSec = fmt.Sprintf(`
 === PREVIOUS ATTEMPT FAILED (Attempt %d) ===
 %s
@@ -52,7 +57,18 @@ IMPORTANT: Analyze the failure above carefully. Common issues:
 - If expected has value but got is empty → code did not write to the target cells
 - If values differ → check calculation logic or format
 - Regenerate the COMPLETE code with fixes applied.
-`, input.Attempt, input.PreviousError)
+`, input.Attempt, prevErr)
+	}
+
+	sopSec := ""
+	if input.PromptAdditions != "" {
+		sopSec = "\n" + input.PromptAdditions + "\n"
+	}
+
+	// Truncate compressed sheet overview for very large spreadsheets
+	compressed := input.Compressed
+	if len(compressed) > 8000 {
+		compressed = compressed[:8000] + "\n...[sheet overview truncated — use PythonRunnerTool to explore data]"
 	}
 
 	instruction := fmt.Sprintf(`%s
@@ -65,7 +81,7 @@ Task Details:
 
 Compressed Sheet Overview:
 %s
-%s`, input.Instruction, input.InputFile, input.AnswerPosition, input.InstructionType, input.WorkDir, input.Compressed, prevErrSec)
+%s%s`, input.Instruction, input.InputFile, input.AnswerPosition, input.InstructionType, input.WorkDir, compressed, sopSec, prevErrSec)
 
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{
 		Agent: ag,

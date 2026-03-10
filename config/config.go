@@ -14,6 +14,7 @@ type Config struct {
 	Executor ExecutorConfig `yaml:"executor"`
 	Docker   DockerConfig   `yaml:"docker"`
 	Bench    BenchConfig    `yaml:"bench"`
+	RAG      RAGConfig      `yaml:"rag"`
 	Models   ModelsConfig   `yaml:"model_routing"`
 }
 
@@ -41,6 +42,21 @@ type BenchConfig struct {
 	ReportDir   string `yaml:"report_dir"`
 }
 
+// RAGConfig controls the RAG few-shot injection system.
+//
+// IMPORTANT: RAG MUST be disabled during benchmark evaluation to prevent
+// test-set contamination. When RAG is populated from benchmark AC results,
+// those solutions are indirectly validated by golden answers — reusing them
+// on the same benchmark constitutes data leakage. RAG is a product-mode
+// feature only.
+type RAGConfig struct {
+	// Enabled controls whether RAG few-shot injection is active.
+	// MUST be false for benchmark runs. Only enable for production/serving.
+	Enabled  bool   `yaml:"enabled"`
+	// StorePath is the file path for the RAG JSON store.
+	StorePath string `yaml:"store_path"`
+}
+
 type ModelsConfig struct {
 	Planner   RoleModelConfig `yaml:"planner"`
 	Coder     RoleModelConfig `yaml:"coder"`
@@ -54,10 +70,12 @@ type RoleModelConfig struct {
 }
 
 type ModelProviderConfig struct {
-	Type      string `yaml:"type"` // claude | gemini | openrouter
-	Model     string `yaml:"model"`
-	MaxTokens int    `yaml:"max_tokens"`
-	BaseURL   string `yaml:"base_url,omitempty"`
+	Type             string `yaml:"type"` // claude | gemini | openrouter | openai
+	Model            string `yaml:"model"`
+	MaxTokens        int    `yaml:"max_tokens"`
+	BaseURL          string `yaml:"base_url,omitempty"`
+	PromptCache      bool   `yaml:"prompt_cache,omitempty"`
+	ReasoningEffort  string `yaml:"reasoning_effort,omitempty"` // none | low | medium | high (for OpenAI-compatible models)
 }
 
 func LoadEnv(paths ...string) {

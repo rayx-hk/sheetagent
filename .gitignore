@@ -1,5 +1,5 @@
 bin/
-bench
+/bench
 output/
 reports/
 data/sample_data_200/
@@ -10,3 +10,6 @@ data/spreadsheetbench_verified_400/
 .DS_Store
 vendor/
 docker/tmp/
+
+# Local model config overrides (may contain proxy URLs / API keys)
+config/models.test.yaml

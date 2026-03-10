@@ -13,43 +13,40 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cloudwego/eino/adk"
-
 	"github.com/rayx-hk/sheetagent/internal/eval"
-	"github.com/rayx-hk/sheetagent/internal/executor"
+	"github.com/rayx-hk/sheetagent/internal/model"
 	"github.com/rayx-hk/sheetagent/internal/orchestrator"
 )
 
 type RunConfig struct {
-	Concurrency  int
-	MaxRetry     int
-	OutputDir    string
-	ReportDir    string
-	Resume       bool
-	REPLExecutor *executor.REPLExecutor
+	Concurrency int
+	MaxRetry    int
+	OutputDir   string
+	ReportDir   string
+	Resume      bool
 }
 
 type Runner struct {
-	cfg       RunConfig
-	orch      *orchestrator.Orchestrator
-	builder   *orchestrator.PromptBuilder
-	judge     *eval.OJJudge
-	failureMu sync.Mutex
-	apiErrors int64
-	totalDone int64
+	cfg          RunConfig
+	engine       *orchestrator.Engine
+	builder      *orchestrator.PromptBuilder
+	judge        *eval.OJJudge
+	tokenTracker *model.TokenTracker
+	failureMu    sync.Mutex
+	apiErrors    int64
+	totalDone    int64
 }
 
-func NewRunner(cfg RunConfig, codeAct adk.Agent, judge *eval.OJJudge, builder *orchestrator.PromptBuilder) *Runner {
-	orch := orchestrator.NewOrchestrator(orchestrator.OrchestratorConfig{
-		MaxRetry:     cfg.MaxRetry,
-		REPLExecutor: cfg.REPLExecutor,
-	}, codeAct, judge, builder)
-
+// NewRunner creates a bench runner backed by the Engine orchestration layer.
+// The Engine internally routes tasks to linear retry or MCTS based on difficulty.
+// tokenTracker may be nil if token tracking is not needed.
+func NewRunner(cfg RunConfig, engine *orchestrator.Engine, judge *eval.OJJudge, builder *orchestrator.PromptBuilder, tokenTracker *model.TokenTracker) *Runner {
 	return &Runner{
-		cfg:     cfg,
-		orch:    orch,
-		builder: builder,
-		judge:   judge,
+		cfg:          cfg,
+		engine:       engine,
+		builder:      builder,
+		judge:        judge,
+		tokenTracker: tokenTracker,
 	}
 }
 
@@ -63,6 +60,10 @@ type TaskResult struct {
 	Instruction  string
 	Duration     float64
 	Confidence   float64 // Agent confidence 0-1, -1 if not parsed
+	TokensIn     int64
+	TokensOut    int64
+	LLMCalls     int
+	PhaseTimings map[string]float64
 }
 
 func (r *Runner) Run(ctx context.Context, tasks []Task) (*eval.BenchReport, error) {
@@ -98,7 +99,19 @@ func (r *Runner) Run(ctx context.Context, tasks []Task) (*eval.BenchReport, erro
 			wg.Add(1)
 			go func(task Task, tc TestCase) {
 				defer wg.Done()
-				sem <- struct{}{}
+
+				// Fast-exit if context is already cancelled (e.g. SIGINT received)
+				select {
+				case <-ctx.Done():
+					resultCh <- TaskResult{
+						TaskID: task.ID,
+						CaseNo: tc.No,
+						Type:   task.InstructionType,
+						Error:  "cancelled: " + ctx.Err().Error(),
+					}
+					return
+				case sem <- struct{}{}:
+				}
 				defer func() { <-sem }()
 
 				result := r.runSingleCase(ctx, task, tc)
@@ -181,23 +194,27 @@ type attemptTrace struct {
 }
 
 type taskResultRecord struct {
-	TaskID          string         `json:"task_id"`
-	CaseNo          int            `json:"case_no"`
-	InstructionType string         `json:"instruction_type"`
-	Instruction     string         `json:"instruction"`
-	Pass            bool           `json:"pass"`
-	AttemptCount    int            `json:"attempt_count"`
-	DurationSeconds float64        `json:"duration_seconds"`
-	Category        string         `json:"category,omitempty"`
-	FinalError      string         `json:"final_error,omitempty"`
-	Confidence      float64        `json:"confidence,omitempty"`
-	Traces          []attemptTrace `json:"traces,omitempty"`
-	FinishedAt      time.Time      `json:"finished_at"`
+	TaskID          string             `json:"task_id"`
+	CaseNo          int                `json:"case_no"`
+	InstructionType string             `json:"instruction_type"`
+	Instruction     string             `json:"instruction"`
+	Pass            bool               `json:"pass"`
+	AttemptCount    int                `json:"attempt_count"`
+	DurationSeconds float64            `json:"duration_seconds"`
+	Category        string             `json:"category,omitempty"`
+	FinalError      string             `json:"final_error,omitempty"`
+	Confidence      float64            `json:"confidence,omitempty"`
+	TokensIn        int64              `json:"tokens_in,omitempty"`
+	TokensOut       int64              `json:"tokens_out,omitempty"`
+	LLMCalls        int                `json:"llm_calls,omitempty"`
+	PhaseTimings    map[string]float64 `json:"phase_timings,omitempty"`
+	Traces          []attemptTrace     `json:"traces,omitempty"`
+	FinishedAt      time.Time          `json:"finished_at"`
 }
 
-func (r *Runner) runSingleCase(ctx context.Context, task Task, tc TestCase) TaskResult {
+func (r *Runner) runSingleCase(ctx context.Context, task Task, tc TestCase) (result TaskResult) {
 	start := time.Now()
-	result := TaskResult{
+	result = TaskResult{
 		TaskID:      task.ID,
 		CaseNo:      tc.No,
 		Type:        task.InstructionType,
@@ -248,12 +265,17 @@ func (r *Runner) runSingleCase(ctx context.Context, task Task, tc TestCase) Task
 		return result
 	}
 
-	orchRes := r.orch.Run(ctx, inputArgs, tc.AnswerFile)
+	orchRes := r.engine.Run(ctx, inputArgs, tc.AnswerFile)
 
 	result.Pass = orchRes.Success
 	result.Error = orchRes.Error
 	result.AttemptCount = orchRes.Attempt
 	result.Confidence = orchRes.Confidence
+	result.TokensIn = orchRes.TokensIn
+	result.TokensOut = orchRes.TokensOut
+	result.LLMCalls = orchRes.LLMCalls
+	result.PhaseTimings = orchRes.PhaseTimings
+	result.Duration = time.Since(start).Seconds()
 
 	r.writeTaskResult(workDir, result)
 	if len(orchRes.AgentTrace) > 0 {
@@ -289,6 +311,10 @@ func (r *Runner) writeTaskResult(workDir string, result TaskResult) {
 		Category:        catStr,
 		FinalError:      result.Error,
 		Confidence:      result.Confidence,
+		TokensIn:        result.TokensIn,
+		TokensOut:       result.TokensOut,
+		LLMCalls:        result.LLMCalls,
+		PhaseTimings:    result.PhaseTimings,
 		FinishedAt:      time.Now(),
 	}
 	data, err := json.MarshalIndent(rec, "", "  ")

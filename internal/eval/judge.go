@@ -45,20 +45,31 @@ type Judge interface {
 }
 
 type OJJudge struct {
-	parser *sheet.ExcelizeParser
+	parser      *sheet.ExcelizeParser
+	formulaEval *executor.FormulaEvaluator
 }
 
-func NewOJJudge() *OJJudge {
+func NewOJJudge(pythonPath string) *OJJudge {
 	return &OJJudge{
-		parser: sheet.NewParser(),
+		parser:      sheet.NewParser(),
+		formulaEval: executor.NewFormulaEvaluator(pythonPath),
 	}
 }
 
 func (j *OJJudge) Evaluate(ctx context.Context, outputFile, answerFile, answerPosition string) (*JudgeResult, error) {
 	slog.Info("evaluating", "output", outputFile, "answer", answerFile, "position", answerPosition)
 
-	if err := executor.ForceCalculate(outputFile); err != nil {
-		slog.Warn("ForceCalculate failed, continuing evaluation", "err", err)
+	// Recalculate formulas in the agent's output so cached values are readable by excelize.
+	if err := j.formulaEval.Evaluate(outputFile); err != nil {
+		slog.Warn("FormulaEvaluator failed on output, continuing", "err", err)
+	}
+
+	// Also recalculate the golden answer file — some benchmarks ship formulas in
+	// the answer file, and excelize's built-in formula engine has known gaps
+	// (YEAR, MID, TEXTJOIN, etc.). Running MS Excel / LibreOffice first ensures
+	// we compare against correctly evaluated values.
+	if err := j.formulaEval.Evaluate(answerFile); err != nil {
+		slog.Warn("FormulaEvaluator failed on answer file, continuing", "err", err)
 	}
 
 	result := CompareFiles(ctx, j.parser, outputFile, answerFile, answerPosition)
