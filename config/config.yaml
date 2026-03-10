@@ -3,7 +3,7 @@ server:
 
 executor:
   type: embedded
-  python_path: python3
+  python_path: /usr/local/bin/python3.14
   timeout: 120s
   work_dir: ./output/workdir
 
@@ -14,6 +14,22 @@ docker:
 bench:
   concurrency: 2
   max_retry: 2
-  dataset_dir: /Users/razil/Desktop/razil/dev/opensource/sheetagent-design/datasets
+  dataset_dir: /Users/razil/Downloads/opensource/sheetagent-design/datasets
   output_dir: ./output
   report_dir: ./reports
+
+# ============================================================================
+# RAG (Retrieval-Augmented Generation) Few-Shot Injection
+# ============================================================================
+# WARNING: RAG MUST be disabled (enabled: false) for benchmark evaluation.
+#
+# RAG accumulates successful task solutions and injects them as few-shot
+# examples into future prompts. When solutions are validated by golden answers,
+# reusing them on the same benchmark constitutes test-set contamination (cheating).
+#
+# Only enable RAG in production/serving mode where tasks come from real users.
+# The bench binary enforces this by refusing to start if RAG is enabled.
+# ============================================================================
+rag:
+  enabled: false
+  store_path: ./data/rag_store.json

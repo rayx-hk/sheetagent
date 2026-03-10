@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	eimodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/rayx-hk/sheetagent/config"
 	"github.com/rayx-hk/sheetagent/internal/agent"
@@ -57,7 +58,12 @@ func run(instruction, inputFile, answerPosition, configPath, modelsPath string) 
 	if err != nil {
 		return err
 	}
-	coderModel := model.NewContextManagedModel(model.NewForceStreamModel(rawModel), 0)
+	var wrapped eimodel.ToolCallingChatModel = model.NewForceStreamModel(rawModel)
+	if router.PromptCacheEnabled(model.RoleCoder) {
+		wrapped = model.NewCacheEnabledModel(wrapped)
+		slog.Info("prompt cache enabled", "role", model.RoleCoder)
+	}
+	coderModel := model.NewContextManagedModel(wrapped, 0)
 
 	exec := executor.NewEmbedded(cfg.Executor.PythonPath, cfg.Executor.Timeout)
 	defer exec.Close()
@@ -69,8 +75,15 @@ func run(instruction, inputFile, answerPosition, configPath, modelsPath string) 
 		return err
 	}
 
+	formulaEval := executor.NewFormulaEvaluator(cfg.Executor.PythonPath)
+	formulaEvalTool, err := agent.NewFormulaEvalTool(formulaEval)
+	if err != nil {
+		return err
+	}
+
 	tools := []tool.BaseTool{
 		runnerTool,
+		formulaEvalTool,
 	}
 
 	codeActAgent, err := agent.NewCodeActAgent(ctx, coderModel, tools)
@@ -78,12 +91,14 @@ func run(instruction, inputFile, answerPosition, configPath, modelsPath string) 
 		return err
 	}
 
-	judge := eval.NewOJJudge()
+	judge := eval.NewOJJudge(cfg.Executor.PythonPath)
 	builder := orchestrator.NewPromptBuilder()
 
 	orch := orchestrator.NewOrchestrator(orchestrator.OrchestratorConfig{
-		MaxRetry:     3,
-		REPLExecutor: replExec,
+		MaxRetry:      3,
+		REPLExecutor:  replExec,
+		PythonPath:    cfg.Executor.PythonPath,
+		UseDualEngine: true,
 	}, codeActAgent, judge, builder)
 
 	absInput, err := filepath.Abs(inputFile)

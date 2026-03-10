@@ -59,8 +59,9 @@ func collectStream(reader *schema.StreamReader[*schema.Message]) (*schema.Messag
 		}
 		if merged == nil {
 			merged = &schema.Message{
-				Role:    chunk.Role,
-				Content: chunk.Content,
+				Role:         chunk.Role,
+				Content:      chunk.Content,
+				ResponseMeta: chunk.ResponseMeta,
 			}
 			if chunk.Extra != nil {
 				merged.Extra = make(map[string]any)
@@ -78,6 +79,12 @@ func collectStream(reader *schema.StreamReader[*schema.Message]) (*schema.Messag
 					merged.Extra[k] = v
 				}
 			}
+			if chunk.ResponseMeta != nil {
+				merged.ResponseMeta = chunk.ResponseMeta
+			}
+		}
+		if chunk.ReasoningContent != "" {
+			merged.ReasoningContent += chunk.ReasoningContent
 		}
 		mergeToolCalls(merged, chunk.ToolCalls)
 	}

@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	DefaultMaxContextChars = 480000 // ~140K tokens, conservative for 200K model limit
-	minKeepRounds          = 3
-	truncatedToolMaxChars  = 300
+	DefaultMaxContextChars = 80000 // ~20K tokens — aggressively compact to minimize token spend
+	minKeepRounds          = 2
+	truncatedToolMaxChars  = 150
 )
 
 // ContextManagedModel wraps a ToolCallingChatModel and proactively prunes

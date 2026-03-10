@@ -55,6 +55,14 @@ func NewRateLimitedModel(inner eimodel.ToolCallingChatModel, minInterval time.Du
 	}
 }
 
+func NewSharedRateLimiter(minInterval time.Duration, label string) *rateLimiter {
+	return &rateLimiter{minInterval: minInterval, label: label}
+}
+
+func NewRateLimitedModelWithLimiter(inner eimodel.ToolCallingChatModel, rl *rateLimiter) *RateLimitedModel {
+	return &RateLimitedModel{inner: inner, limiter: rl}
+}
+
 func isNonRetryableError(err error) bool {
 	s := err.Error()
 	if strings.Contains(s, "413") {
@@ -70,14 +78,70 @@ func isNonRetryableError(err error) bool {
 	return false
 }
 
+// circuitBreaker tracks consecutive API failures to trigger fast cooldown.
+var apiCircuit struct {
+	mu              sync.Mutex
+	consecutiveFail int
+	lastFailTime    time.Time
+}
+
+const (
+	circuitThreshold = 3  // consecutive failures before circuit opens
+	circuitCooldown  = 20 * time.Second
+)
+
+func circuitOpen() bool {
+	apiCircuit.mu.Lock()
+	defer apiCircuit.mu.Unlock()
+	if apiCircuit.consecutiveFail >= circuitThreshold {
+		if time.Since(apiCircuit.lastFailTime) < circuitCooldown {
+			return true
+		}
+		apiCircuit.consecutiveFail = 0
+	}
+	return false
+}
+
+func circuitRecordSuccess() {
+	apiCircuit.mu.Lock()
+	apiCircuit.consecutiveFail = 0
+	apiCircuit.mu.Unlock()
+}
+
+func circuitRecordFailure() {
+	apiCircuit.mu.Lock()
+	apiCircuit.consecutiveFail++
+	apiCircuit.lastFailTime = time.Now()
+	apiCircuit.mu.Unlock()
+}
+
+func is403or502(err error) bool {
+	s := err.Error()
+	return strings.Contains(s, "403") || strings.Contains(s, "502") || strings.Contains(s, "503")
+}
+
 func doWithRetry[T any](ctx context.Context, op func() (T, error)) (T, error) {
 	var lastErr error
-	backoff := 2 * time.Second
-	maxRetries := 6
+	backoff := 3 * time.Second
+	maxRetries := 5
 
 	for i := 0; i < maxRetries; i++ {
+		if circuitOpen() {
+			remaining := circuitCooldown - time.Since(apiCircuit.lastFailTime)
+			if remaining > 0 {
+				slog.Warn("circuit breaker open, waiting", "cooldown", remaining.Round(time.Millisecond))
+				select {
+				case <-time.After(remaining):
+				case <-ctx.Done():
+					var zero T
+					return zero, ctx.Err()
+				}
+			}
+		}
+
 		res, err := op()
 		if err == nil {
+			circuitRecordSuccess()
 			return res, nil
 		}
 
@@ -89,22 +153,26 @@ func doWithRetry[T any](ctx context.Context, op func() (T, error)) (T, error) {
 		}
 
 		if isNonRetryableError(err) {
-			slog.Warn("non-retryable API error (payload too large), skipping retry", "error", err)
+			slog.Warn("non-retryable API error, skipping retry", "error", err)
 			break
+		}
+
+		if is403or502(err) {
+			circuitRecordFailure()
 		}
 
 		if i == maxRetries-1 {
 			break
 		}
 
-		jitter := time.Duration(time.Now().UnixNano()%1000) * time.Millisecond
+		jitter := time.Duration(time.Now().UnixNano()%2000) * time.Millisecond
 		actualBackoff := backoff + jitter
 
 		slog.Warn("API call failed, retrying", "attempt", i+1, "backoff", actualBackoff, "error", err)
 
 		select {
 		case <-time.After(actualBackoff):
-			backoff *= 2
+			backoff = min(backoff*2, 30*time.Second)
 		case <-ctx.Done():
 			var zero T
 			return zero, ctx.Err()

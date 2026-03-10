@@ -1,42 +1,45 @@
 model_routing:
   planner:
     primary:
-      type: claude
-      model: claude-opus-4-6-20260210
+      type: openai
+      model: claude-sonnet-4-5-20250929
       max_tokens: 16384
+      base_url: https://xh.v1api.cc/v1
     fallback:
-      type: claude
-      model: claude-sonnet-4-20260210
+      type: openai
+      model: claude-sonnet-4-5-20250929
       max_tokens: 2048
+      base_url: https://xh.v1api.cc/v1
   coder:
     primary:
-      type: claude
-      model: claude-opus-4-6-20260210
+      type: openai
+      model: claude-sonnet-4-5-20250929
       max_tokens: 16384
+      base_url: https://xh.v1api.cc/v1
     fallback:
-      type: claude
-      model: claude-sonnet-4-20260210
+      type: openai
+      model: claude-sonnet-4-5-20250929
       max_tokens: 2048
+      base_url: https://xh.v1api.cc/v1
   informer:
     primary:
-      type: claude
-      model: claude-opus-4-6-20260210
+      type: openai
+      model: claude-sonnet-4-5-20250929
       max_tokens: 16384
+      base_url: https://xh.v1api.cc/v1
     fallback:
-      type: claude
-      model: claude-sonnet-4-20260210
+      type: openai
+      model: claude-sonnet-4-5-20250929
       max_tokens: 2048
+      base_url: https://xh.v1api.cc/v1
   evaluator:
     primary:
-      type: claude
-      model: claude-opus-4-6-20260210
+      type: openai
+      model: claude-sonnet-4-5-20250929
       max_tokens: 16384
+      base_url: https://xh.v1api.cc/v1
     fallback:
-      type: claude
-      model: claude-sonnet-4-20260210
+      type: openai
+      model: claude-sonnet-4-5-20250929
       max_tokens: 2048
-
-openrouter:
-  base_url: https://openrouter.ai/api/v1
-  fallback_strategy: ordered
-  max_retries: 2
+      base_url: https://xh.v1api.cc/v1

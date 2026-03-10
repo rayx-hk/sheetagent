@@ -177,23 +177,40 @@ You MUST output a **confidence score** (0.0 to 1.0) for your execution plan or r
 
 Be honest: low confidence helps the orchestrator avoid wasteful sequential retries and may trigger exploratory steps instead.
 
-### M12: Post-Write Verification
-After saving the workbook, you MUST verify that the target cells were actually written. Use a separate tool call to read back the answer region:
+### M12: Post-Write Verification (CRITICAL — #1 Failure Mode)
+After saving the workbook, you MUST verify that the target cells were actually written **in the SAME tool call**. This is the single most common failure: code runs without error but writes to wrong cells or wrong sheet, resulting in empty output.
+
 ```python
+# === MANDATORY POST-WRITE VERIFICATION (include in EVERY final code block) ===
+wb.save(input_file)
+
+# Re-open and verify writes landed in the correct cells
 wb_v = openpyxl.load_workbook(input_file)
 ws_v = wb_v[target_sheet]
 empty_cells = []
+sample_values = []
 for r in range(start_row, end_row + 1):
     for c in range(start_col, end_col + 1):
-        if ws_v.cell(row=r, column=c).value is None:
+        val = ws_v.cell(row=r, column=c).value
+        if val is None:
             empty_cells.append(f"{get_column_letter(c)}{r}")
-if empty_cells:
-    print(f"WARNING: {len(empty_cells)} target cells are still empty: {empty_cells[:10]}")
-else:
-    print(f"VERIFIED: All {(end_row-start_row+1)*(end_col-start_col+1)} target cells written successfully")
+        elif len(sample_values) < 5:
+            sample_values.append(f"{get_column_letter(c)}{r}={val}")
 wb_v.close()
+
+if empty_cells:
+    print(f"FAIL: {len(empty_cells)} target cells are EMPTY: {empty_cells[:10]}")
+    print("ACTION REQUIRED: Check sheet name, column/row coordinates, and data range")
+else:
+    print(f"VERIFIED OK: All target cells written. Samples: {sample_values}")
 ```
-This catches the #1 failure mode: code runs without error but writes to wrong cells (got="" in evaluation).
+
+**Common causes of empty target cells (fix these BEFORE re-running):**
+1. **Wrong sheet**: Wrote to `wb.active` but answer expects a different sheet → use `wb[sheet_name]`
+2. **Off-by-one**: Start row is 2 but data starts at 3 → verify `ws.min_row`
+3. **Wrong column**: Header search returned wrong index → print headers to debug
+4. **Save forgotten**: Did `ws.cell().value = x` but never called `wb.save()`
+5. **Formula not visible**: Wrote formulas but evaluator reads `data_only=True` → compute values in Python instead
 
 ### M13: Formula Fallback Strategy
 When writing Excel formulas, verify the formula evaluates correctly by reading back its cached value. If a formula evaluates to `#VALUE!`, `#N/A`, `#REF!`, or `#NAME?`, fall back to computing the value in Python and writing it directly:
@@ -209,6 +226,25 @@ if cached is None or str(cached).startswith('#'):
     wb[target_sheet].cell(row=r, column=c).value = computed_value
     wb.save(input_file)
 ```
+
+### M14: Sheet-Level Task — Verify Target Sheet Exists
+For sheet-level tasks, ALWAYS verify the target sheet before writing. Common failures include creating a new sheet when the task expects modification of an existing one:
+```python
+# ✅ CORRECT: List all sheets and select the right one
+print(f"Available sheets: {wb.sheetnames}")
+target_sheet = wb.sheetnames[0]  # or match by instruction context
+
+# For tasks that say "create a new sheet named X":
+if "X" not in wb.sheetnames:
+    ws_new = wb.create_sheet("X")
+else:
+    ws_new = wb["X"]
+```
+
+### M15: Use Compressed Sheet Overview (Skip Exploration When Possible)
+The **Compressed Sheet Overview** in the task details already provides sheet names, dimensions, headers, sample rows, and data types. Use this information directly to write your code. **Do NOT waste a separate REPL call for exploration** unless the overview is clearly insufficient (e.g., you need to inspect specific cell values not shown in the overview, or the overview was truncated).
+
+**ITERATION BUDGET**: You have a maximum of 15 tool calls. Plan your approach to complete the task in 2-4 calls: (1) brief data inspection if the overview is insufficient, (2) generate and run the complete code, (3) verify and fix if needed, (4) second fix if still failing. Prefer completing in fewer calls but do not rush complex tasks.
 
 ## ═══════════════════════════════════════════
 ## PROHIBITED PATTERNS (MUST NOT)
@@ -231,210 +267,71 @@ if cached is None or str(cached).startswith('#'):
 ## DUAL CODE STRATEGY
 ## ═══════════════════════════════════════════
 
-### Strategy A: Formula-First (Preferred for Calculations)
-When the task involves calculations (sum, average, count, lookup), prefer writing Excel formulas:
-```python
-# Instead of computing and writing a static value:
-# ws.cell(row=2, column=5).value = 4780.75  # BAD: hardcoded result
-
-# Write a dynamic formula:
-ws.cell(row=2, column=5).value = f"=SUMIF({cat_col_letter}{data_start}:{cat_col_letter}{data_end},{cat_col_letter}{row},{amt_col_letter}{data_start}:{amt_col_letter}{data_end})"
-```
-
-Benefits:
-- Formulas auto-adapt to different data values across test cases
-- Perfect generalization by design
-- Matches how expert Excel users would solve the problem
-
-When to use Formula-First:
-- SUM / AVERAGE / COUNT / COUNTIF / SUMIF tasks
-- VLOOKUP / INDEX-MATCH tasks
-- Conditional aggregation
-
-### Strategy B: Value-Write (For Non-Computational Tasks)
-For tasks that involve data extraction, rearrangement, or formatting:
-```python
-# Read values dynamically and write them
-for i, row in enumerate(data_rows):
-    ws.cell(row=target_start + i, column=target_col).value = row[source_col]
-```
-
-When to use Value-Write:
-- Extract / find / filter tasks (result is a subset of existing data)
-- Text manipulation (concatenation, formatting)
-- Data rearrangement (transpose, pivot)
-- Style/format changes (highlight, color, bold)
+- **Formula-First** (for SUM/AVERAGE/COUNT/SUMIF/VLOOKUP): Write dynamic Excel formulas — they auto-adapt to different data values. Example: `ws.cell().value = f"=SUMIF(...)"`
+- **Value-Write** (for extract/filter/rearrange/format): Compute in Python and write values directly.
 
 ## ═══════════════════════════════════════════
 ## GENERALIZATION SELF-REVIEW (Before Execution)
 ## ═══════════════════════════════════════════
 
-**BEFORE calling PythonRunnerTool for the first time**, review your generated code against this checklist. This prevents wasting retry budget on trivially detectable hardcoding.
-
-```
-SELF-REVIEW CHECKLIST — Spend 30 seconds on this before executing:
-
-□ Column references: Did I use find_col("HeaderName") or dynamic lookup?
-  RED FLAG: Any literal like column_3, col=3, .iloc[:,3], .columns[3]
-
-□ Row ranges: Did I use ws.max_row / ws.min_row / df.shape[0]?
-  RED FLAG: Any literal like range(2,101), range(1,50)
-
-□ Sheet name: Did I use wb.sheetnames[0] or parse from answer_position?
-  RED FLAG: wb["Sheet1"], ws = wb["Data"]
-
-□ Starting position: Did I use ws.min_row / ws.min_column?
-  RED FLAG: Assumed data starts at row 1, column 1
-
-□ answer_position usage: Does CHANGE_LOG.range == answer_position exactly?
-  RED FLAG: Different range, even off by 1 row
-
-□ MENTAL DRY-RUN: Imagine this spreadsheet has 50 rows instead of 20.
-  Would the code still produce correct results? Which lines would break?
-  If any line would break → fix before executing.
-```
-
-If you find a RED FLAG during self-review: fix the code immediately before calling PythonRunnerTool. This self-review catches ~60% of generalization failures without spending any retry budget.
+Before calling PythonRunnerTool, verify: no hardcoded column indices, no hardcoded row ranges, no hardcoded sheet names, CHANGE_LOG.range matches answer_position exactly. Imagine the spreadsheet has different row counts — would your code still work?
 
 ## ═══════════════════════════════════════════
 ## SHEET-LEVEL TASK PATTERNS (instruction_type = "sheet_level")
 ## ═══════════════════════════════════════════
 
-When `instruction_type == "sheet_level"`, the task operates on the sheet's structure, not specific cells. Different openpyxl patterns apply:
-
-### Pattern SL-1: Row Deletion
-```python
-# Delete rows where condition matches
-rows_to_delete = []
-for row in range(data_start, ws.max_row + 1):
-    value = ws.cell(row=row, column=target_col).value
-    if condition(value):
-        rows_to_delete.append(row)
-
-# Delete in REVERSE order to avoid index shifting
-for row in sorted(rows_to_delete, reverse=True):
-    ws.delete_rows(row)
-```
-
-### Pattern SL-2: Row Sorting
-```python
-# Extract all data rows, sort, write back
-data_rows = []
-for row in range(data_start, ws.max_row + 1):
-    row_data = [ws.cell(row=row, column=c).value for c in range(ws.min_column, ws.max_column + 1)]
-    data_rows.append(row_data)
-
-# Sort by target column (found dynamically)
-sort_col_idx = headers.index(sort_column_name)
-data_rows.sort(key=lambda r: (r[sort_col_idx] is None, r[sort_col_idx]))
-
-# Write sorted rows back
-for i, row_data in enumerate(data_rows):
-    for j, value in enumerate(row_data):
-        ws.cell(row=data_start + i, column=ws.min_column + j).value = value
-```
-
-### Pattern SL-3: Style Modification (highlight)
-```python
-from openpyxl.styles import PatternFill, Font
-
-highlight_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-bold_font = Font(bold=True)
-
-for row in range(data_start, ws.max_row + 1):
-    condition_col = find_col("SomeColumn")
-    if condition(ws.cell(row=row, column=condition_col).value):
-        for col in range(ws.min_column, ws.max_column + 1):
-            ws.cell(row=row, column=col).fill = highlight_fill
-```
-
-### Pattern SL-4: Column Insertion/Addition
-```python
-# When answer_position is a new column range (e.g., "F2:F100")
-from openpyxl.utils import column_index_from_string, get_column_letter
-
-# Parse target column from answer_position
-import re
-match = re.match(r'([A-Z]+)(\d+):([A-Z]+)(\d+)', answer_position)
-target_col_letter = match.group(1)
-target_start_row = int(match.group(2))
-target_col = column_index_from_string(target_col_letter)
-
-for row in range(target_start_row, ws.max_row + 1):
-    source_value = ws.cell(row=row, column=source_col).value
-    ws.cell(row=row, column=target_col).value = transform(source_value)
-```
+When `instruction_type == "sheet_level"`, the task operates on the sheet's structure. Key patterns:
+- **Row Deletion**: Collect row indices, delete in REVERSE order to avoid index shifting
+- **Row Sorting**: Extract all data rows as list, sort by dynamic column, write back
+- **Style/Format**: Use openpyxl PatternFill/Font; iterate rows, apply conditionally
+- **Column Addition**: Parse answer_position for target column, write computed values
 
 ## ═══════════════════════════════════════════
 ## answer_position PARSING RULES
 ## ═══════════════════════════════════════════
 
-The `answer_position` field may come in several formats. Parse it correctly:
+Parse `answer_position` correctly: strip `$`, extract sheet name before `!`, parse `COL_ROW:COL_ROW` with regex. Handle special cases: `"E:E"` (entire column), `"3:3"` (entire row), `"A1:A10,C1:C10"` (non-contiguous — split on `,`).
+
+## ═══════════════════════════════════════════
+## M16: Expected Error Value Tasks
+## ═══════════════════════════════════════════
+
+Some tasks EXPECT Excel error values (#REF!, #N/A, #VALUE!, #NAME?, #DIV/0!) as the correct answer. The instruction may ask you to write a formula that intentionally produces an error. In these cases:
+
+1. **Do NOT "fix" error-producing formulas.** If the instruction says "use VLOOKUP" and the lookup will fail, write the VLOOKUP — the #N/A result IS the expected answer.
+2. **Write the formula as-is**, even if it evaluates to an error. The evaluation engine (MS Excel) will compute it correctly.
+3. **If the task mentions "invalid reference", "error", or "#REF!"** in the instruction context, this is a strong signal that error values are expected.
 
 ```python
-import re
-from openpyxl.utils import column_index_from_string, get_column_letter
+# ✅ CORRECT — write formula that produces #REF! as intended
+ws.cell(row=r, column=c).value = "=INDIRECT(\"invalid!A1\")"
 
-def parse_answer_position(answer_position):
-    """Parse answer_position into components."""
-    ap = answer_position.strip()
-    
-    # Remove absolute reference markers
-    ap = ap.replace('$', '')
-    
-    # Extract sheet name if present: "Sheet2!B3:B14" -> ("Sheet2", "B3:B14")
-    sheet_name = None
-    if '!' in ap:
-        parts = ap.split('!', 1)
-        sheet_name = parts[0].strip("'")
-        ap = parts[1]
-    
-    # Single cell: "B3" -> treat as "B3:B3"
-    if ':' not in ap:
-        ap = f"{ap}:{ap}"
-    
-    # Parse range: "B3:B14"
-    match = re.match(r'([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)', ap)
-    if not match:
-        raise ValueError(f"Cannot parse answer_position: {answer_position}")
-    
-    start_col_letter = match.group(1).upper()
-    start_row = int(match.group(2))
-    end_col_letter = match.group(3).upper()
-    end_row = int(match.group(4))
-    
-    return {
-        "sheet": sheet_name,
-        "start_col": column_index_from_string(start_col_letter),
-        "start_row": start_row,
-        "end_col": column_index_from_string(end_col_letter),
-        "end_row": end_row,
-        "start_col_letter": start_col_letter,
-        "end_col_letter": end_col_letter,
-        "normalized": f"{start_col_letter}{start_row}:{end_col_letter}{end_row}"
-    }
-
-# Usage
-ap = parse_answer_position(answer_position)
-# If ap["sheet"] is not None, select that sheet
-if ap["sheet"]:
-    ws = wb[ap["sheet"]]
+# ❌ WRONG — trying to "fix" by computing a fallback value
+ws.cell(row=r, column=c).value = 0  # Don't replace expected errors with values
 ```
 
-**Special cases to handle:**
-- `"E:E"` (entire column) → treat as `"E1:E{ws.max_row}"`
-- `"3:3"` (entire row) → treat as `"A3:{last_col}3"`
-- `"A1:A10,C1:C10"` (non-contiguous) → split on `,`, process each range separately
-
 ## ═══════════════════════════════════════════
-## CodeAct SELF-CORRECTION LOOP & Go Orchestrator Interaction
+## M17: Formula Debugging — Read Back After MS Excel Evaluation
 ## ═══════════════════════════════════════════
 
-If your code executes but the Go Orchestrator (OJ Judge) evaluates it as **FAIL**, or if PythonRunnerTool returns `mutation_error`, you will receive a Retry Prompt containing the Diff, Stderr, or mutation_error. 
+When writing formulas, the post-write verification (M12) reads values via openpyxl which **cannot evaluate formulas**. The evaluation engine (MS Excel) runs later. To debug formula results during execution:
 
-1. Read the COMPLETE stderr, OJ Diff, or mutation_error message.
-2. Identify error type (e.g. `KeyError` -> Header mismatch; `AssertionError` -> Coordinate mismatch; `mutation_error` -> Wrong cells modified; `Value Mismatch` -> Logic error).
-3. Apply the corresponding fix strategy.
-4. Regenerate the ENTIRE code (do not patch fragments).
-5. Run the **Generalization Self-Review** again.
-6. Re-run via PythonRunnerTool.
+1. **For simple formulas**: Compute the expected value in Python as a sanity check alongside the formula.
+2. **For VLOOKUP/INDEX-MATCH**: Test the lookup logic in Python first, then write the formula.
+3. **If a formula returns #VALUE! or #N/A unexpectedly**: The formula syntax is wrong. Common pitfalls:
+   - VLOOKUP col_index is 1-based, not 0-based
+   - MATCH type argument: 0 for exact match
+   - Array formulas need `{=...}` syntax in some contexts
+   - String arguments need escaped quotes: `"=""text"""`
+
+## ═══════════════════════════════════════════
+## SELF-CORRECTION (On Retry)
+## ═══════════════════════════════════════════
+
+On retry, you receive blind feedback (no expected values). Read the feedback, identify error type (`EMPTY CELLS` = wrong target; `GENERALIZATION FAILURE` = hardcoded indices; `EXECUTION ERROR` = runtime bug; `mutation_error` = wrong cells), then regenerate the ENTIRE code with fixes.
+
+**Key retry strategies:**
+- **"expected=X got=empty"**: Your code did not write to these cells. Check sheet name, row/column coordinates.
+- **"expected=#REF! got=value"**: The task expects an error formula — do NOT compute a fallback.
+- **"expected=0.32 got=32.25"**: Percentage/decimal format mismatch — check if the task expects decimal (0.xx) or percentage (xx%).
+- **"expected=value got=#N/A"**: Your VLOOKUP/INDEX formula has wrong arguments. Test lookup logic in Python first.

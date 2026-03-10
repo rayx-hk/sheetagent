@@ -1,21 +1,25 @@
 model_routing:
   planner:
     primary:
-      type: claude
-      model: claude-sonnet-4-6-20250514
-      max_tokens: 200000
+      type: openai
+      model: claude-sonnet-4-5-20250929
+      max_tokens: 16384
+      base_url: https://xh.v1api.cc/v1
   coder:
     primary:
-      type: claude
-      model: claude-sonnet-4-6-20250514
-      max_tokens: 200000
+      type: openai
+      model: claude-sonnet-4-5-20250929
+      max_tokens: 16384
+      base_url: https://xh.v1api.cc/v1
   informer:
     primary:
-      type: claude
-      model: claude-sonnet-4-6-20250514
-      max_tokens: 200000
+      type: openai
+      model: claude-sonnet-4-5-20250929
+      max_tokens: 16384
+      base_url: https://xh.v1api.cc/v1
   evaluator:
     primary:
-      type: claude
-      model: claude-sonnet-4-6-20250514
-      max_tokens: 200000
+      type: openai
+      model: claude-sonnet-4-5-20250929
+      max_tokens: 16384
+      base_url: https://xh.v1api.cc/v1
